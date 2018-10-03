@@ -1,0 +1,4 @@
+name: fetch
+
+environment:
+  sdk: ^2.1.0-dev
