@@ -1,4 +1,4 @@
-package httpclient
+package fetch
 
 import (
 	"context"
@@ -33,7 +33,7 @@ func TestGetRequest(t *testing.T) {
 			"cookie":    cookie.Value,
 			"header":    r.Header.Values("X-Test"),
 		}
-		w.Header().Add("X-Server", "httpclient-test")
+		w.Header().Add("X-Server", "fetch-test")
 		_ = json.NewEncoder(w).Encode(payload)
 	}))
 	defer srv.Close()
@@ -41,7 +41,7 @@ func TestGetRequest(t *testing.T) {
 	res, err := Get(
 		srv.URL,
 		AddCookie("sid", "abc"),
-		WithUserAgent("HTTPClientTest/1.0"),
+		WithUserAgent("FetchTest/1.0"),
 		AddQuery("a", "aaa"),
 		AddQuery("b", "bbb c"),
 		AddHeader("X-Test", "1"),
@@ -71,7 +71,7 @@ func TestGetRequest(t *testing.T) {
 	if got := data.Args["b"]; !reflect.DeepEqual(got, []string{"bbb c"}) {
 		t.Fatalf("unexpected arg b: %#v", got)
 	}
-	if data.UserAgent != "HTTPClientTest/1.0" {
+	if data.UserAgent != "FetchTest/1.0" {
 		t.Fatalf("unexpected user agent: %s", data.UserAgent)
 	}
 	if data.Cookie != "abc" {
@@ -80,10 +80,10 @@ func TestGetRequest(t *testing.T) {
 	if !reflect.DeepEqual(data.Header, []string{"1", "2"}) {
 		t.Fatalf("unexpected repeated header values: %#v", data.Header)
 	}
-	if res.Header["X-Server"] != "httpclient-test" {
+	if res.Header["X-Server"] != "fetch-test" {
 		t.Fatalf("unexpected flattened header value: %s", res.Header["X-Server"])
 	}
-	if res.Headers.Get("X-Server") != "httpclient-test" {
+	if res.Headers.Get("X-Server") != "fetch-test" {
 		t.Fatalf("unexpected raw header value: %s", res.Headers.Get("X-Server"))
 	}
 }

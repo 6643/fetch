@@ -1,4 +1,4 @@
-# httpclient
+# fetch
 
 一个无状态、打平函数式参数的 HTTP 工具包。
 
@@ -14,7 +14,7 @@
 ## 安装
 
 ```bash
-go get github.com/6643/httpclient
+go get github.com/6643/fetch
 ```
 
 ## 快速开始
@@ -26,16 +26,16 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/6643/httpclient"
+	"github.com/6643/fetch"
 )
 
 func main() {
-	res, err := httpclient.Get(
+	res, err := fetch.Get(
 		"https://example.com/api",
-		httpclient.WithTimeout(5*time.Second),
-		httpclient.AddQuery("q", "golang"),
-		httpclient.AddHeader("X-Trace-ID", "req-1"),
-		httpclient.AddCookie("sid", "abc"),
+		fetch.WithTimeout(5*time.Second),
+		fetch.AddQuery("q", "golang"),
+		fetch.AddHeader("X-Trace-ID", "req-1"),
+		fetch.AddCookie("sid", "abc"),
 	)
 	if err != nil {
 		panic(err)
@@ -49,13 +49,13 @@ func main() {
 ## 方法
 
 ```go
-httpclient.Do(method, url, opts...)
-httpclient.Get(url, opts...)
-httpclient.Post(url, opts...)
-httpclient.Put(url, opts...)
-httpclient.Delete(url, opts...)
-httpclient.Patch(url, opts...)
-httpclient.Head(url, opts...)
+fetch.Do(method, url, opts...)
+fetch.Get(url, opts...)
+fetch.Post(url, opts...)
+fetch.Put(url, opts...)
+fetch.Delete(url, opts...)
+fetch.Patch(url, opts...)
+fetch.Head(url, opts...)
 ```
 
 ## 可用参数
@@ -63,42 +63,42 @@ httpclient.Head(url, opts...)
 ### 通用参数
 
 ```go
-httpclient.WithContext(ctx)
-httpclient.WithTimeout(5 * time.Second)
-httpclient.WithUserAgent("my-agent/1.0")
+fetch.WithContext(ctx)
+fetch.WithTimeout(5 * time.Second)
+fetch.WithUserAgent("my-agent/1.0")
 ```
 
 ### 请求头、Cookie、Query
 
 ```go
-httpclient.AddHeader("X-Trace-ID", "req-1")
-httpclient.AddCookie("sid", "abc")
-httpclient.AddQuery("q", "golang")
+fetch.AddHeader("X-Trace-ID", "req-1")
+fetch.AddCookie("sid", "abc")
+fetch.AddQuery("q", "golang")
 ```
 
 ### Body
 
 ```go
-httpclient.WithBody("application/json", reader)
-httpclient.WithJSON(v)
-httpclient.WithXML("<root />")
+fetch.WithBody("application/json", reader)
+fetch.WithJSON(v)
+fetch.WithXML("<root />")
 ```
 
 ### 表单与文件上传
 
 ```go
-httpclient.AddFormValue("name", "alice")
-httpclient.AddMultipartField("note", "hello")
-httpclient.AddMultipartFile("file", "a.txt", reader)
-httpclient.AddFileData("file", "a.txt", []byte("hello"))
+fetch.AddFormValue("name", "alice")
+fetch.AddMultipartField("note", "hello")
+fetch.AddMultipartFile("file", "a.txt", reader)
+fetch.AddFileData("file", "a.txt", []byte("hello"))
 ```
 
 ### 当次连接参数
 
 ```go
-httpclient.WithProxy("http://127.0.0.1:8080")
-httpclient.WithLocalAddr("192.168.1.10")
-httpclient.WithTLSConfig(tlsConfig)
+fetch.WithProxy("http://127.0.0.1:8080")
+fetch.WithLocalAddr("192.168.1.10")
+fetch.WithTLSConfig(tlsConfig)
 ```
 
 ## JSON 示例
@@ -110,9 +110,9 @@ payload := struct {
 	Name: "alice",
 }
 
-res, err := httpclient.Post(
+res, err := fetch.Post(
 	"https://example.com/users",
-	httpclient.WithJSON(payload),
+	fetch.WithJSON(payload),
 )
 if err != nil {
 	panic(err)
@@ -122,10 +122,10 @@ if err != nil {
 ## 文件上传示例
 
 ```go
-res, err := httpclient.Post(
+res, err := fetch.Post(
 	"https://example.com/upload",
-	httpclient.AddMultipartField("description", "sample upload"),
-	httpclient.AddFileData("file", "hello.txt", []byte("hello")),
+	fetch.AddMultipartField("description", "sample upload"),
+	fetch.AddFileData("file", "hello.txt", []byte("hello")),
 )
 if err != nil {
 	panic(err)
@@ -135,9 +135,9 @@ if err != nil {
 ## TLS 示例
 
 ```go
-res, err := httpclient.Get(
+res, err := fetch.Get(
 	"https://example.com/secure",
-	httpclient.WithTLSConfig(tlsConfig),
+	fetch.WithTLSConfig(tlsConfig),
 )
 if err != nil {
 	panic(err)
@@ -180,4 +180,3 @@ res.JSON(&dst)
 - `AddField`
 - `AddFile`
 - `AddUrlArg`
-# fetch

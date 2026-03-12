@@ -1,4 +1,4 @@
-package httpclient
+package fetch
 
 import (
 	"encoding/json"
