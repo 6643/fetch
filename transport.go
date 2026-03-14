@@ -35,27 +35,47 @@ func transportFor(cfg *callConfig) (*http.Transport, func(), error) {
 }
 
 func applyTransportOptions(transport *http.Transport, cfg *callConfig) error {
-	if cfg.proxySet {
-		if cfg.proxyURL == nil {
-			transport.Proxy = nil
-		} else {
-			transport.Proxy = http.ProxyURL(cfg.proxyURL)
-		}
+	applyProxy(transport, cfg)
+	
+	if err := applyLocalAddr(transport, cfg); err != nil {
+		return err
 	}
 
-	if cfg.localAddrSet {
-		dialContext, err := newDialContext(cfg.localAddr)
-		if err != nil {
-			return err
-		}
-		transport.DialContext = dialContext
+	applyTLSConfig(transport, cfg)
+	return nil
+}
+
+func applyProxy(transport *http.Transport, cfg *callConfig) {
+	if !cfg.proxySet {
+		return
 	}
 
+	if cfg.proxyURL == nil {
+		transport.Proxy = nil
+		return
+	}
+
+	transport.Proxy = http.ProxyURL(cfg.proxyURL)
+}
+
+func applyLocalAddr(transport *http.Transport, cfg *callConfig) error {
+	if !cfg.localAddrSet {
+		return nil
+	}
+
+	dialContext, err := newDialContext(cfg.localAddr)
+	if err != nil {
+		return err
+	}
+
+	transport.DialContext = dialContext
+	return nil
+}
+
+func applyTLSConfig(transport *http.Transport, cfg *callConfig) {
 	if cfg.tlsConfig != nil {
 		transport.TLSClientConfig = cfg.tlsConfig.Clone()
 	}
-
-	return nil
 }
 
 func newDialContext(localAddr string) (func(ctx context.Context, network, address string) (net.Conn, error), error) {
