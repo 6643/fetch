@@ -38,31 +38,42 @@ func buildResponse(httpResponse *http.Response, body []byte) *Response {
 		Cookie:     make(map[string]string),
 	}
 
-	for name, values := range httpResponse.Header {
-		if !strings.EqualFold(name, "Location") && !strings.EqualFold(name, "Set-Cookie") {
-			res.Header[name] = strings.Join(values, "; ")
-		}
-	}
+	extractHeaders(res, httpResponse.Header)
+	extractLocation(res, httpResponse)
+	extractCookies(res, httpResponse.Cookies())
 
+	return res
+}
+
+func extractHeaders(res *Response, httpHeader http.Header) {
+	for name, values := range httpHeader {
+		if strings.EqualFold(name, "Location") || strings.EqualFold(name, "Set-Cookie") {
+			continue
+		}
+		res.Header[name] = strings.Join(values, "; ")
+	}
+}
+
+func extractLocation(res *Response, httpResponse *http.Response) {
 	if u, err := httpResponse.Location(); err == nil {
 		res.Location = u.String()
-	} else if location := httpResponse.Header.Get("Location"); location != "" {
-		res.Location = location
+		return
+	}
+	res.Location = httpResponse.Header.Get("Location")
+}
+
+func extractCookies(res *Response, cookies []*http.Cookie) {
+	if len(cookies) == 0 {
+		return
 	}
 
-	cookies := httpResponse.Cookies()
-	if len(cookies) > 0 {
-		res.CookiesList = append([]*http.Cookie(nil), cookies...)
-	}
-
+	res.CookiesList = append([]*http.Cookie(nil), cookies...)
 	var cookiePairs []string
 	for _, cookie := range cookies {
 		res.Cookie[cookie.Name] = cookie.Value
 		cookiePairs = append(cookiePairs, cookie.Name+"="+cookie.Value)
 	}
 	res.Cookies = strings.Join(cookiePairs, "; ")
-
-	return res
 }
 
 // JSON unmarshals the response body into the given interface.
