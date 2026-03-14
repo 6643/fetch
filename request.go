@@ -37,22 +37,13 @@ func setBodyType(cfg *callConfig, newType bodyType) error {
 }
 
 func buildRequest(method, rawURL string, cfg *callConfig) (*http.Request, error) {
-	if (method == http.MethodGet || method == http.MethodHead) && cfg.bodySetType != bodyTypeNone {
-		return nil, fmt.Errorf("%s method should not have a request body", method)
+	if err := validateMethod(method, cfg.bodySetType); err != nil {
+		return nil, err
 	}
 
-	parsedURL, err := url.Parse(rawURL)
+	parsedURL, err := finalizeURL(rawURL, cfg.query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse URL %q: %w", rawURL, err)
-	}
-	if len(cfg.query) > 0 {
-		currentQuery := parsedURL.Query()
-		for key, values := range cfg.query {
-			for _, value := range values {
-				currentQuery.Add(key, value)
-			}
-		}
-		parsedURL.RawQuery = currentQuery.Encode()
+		return nil, err
 	}
 
 	reqBody, contentType, err := prepareBody(cfg)
@@ -65,6 +56,38 @@ func buildRequest(method, rawURL string, cfg *callConfig) (*http.Request, error)
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
+	applyMetadata(req, cfg, contentType)
+	return req, nil
+}
+
+func validateMethod(method string, bType bodyType) error {
+	if (method == http.MethodGet || method == http.MethodHead) && bType != bodyTypeNone {
+		return fmt.Errorf("%s method should not have a request body", method)
+	}
+	return nil
+}
+
+func finalizeURL(rawURL string, query url.Values) (*url.URL, error) {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse URL %q: %w", rawURL, err)
+	}
+
+	if len(query) == 0 {
+		return parsedURL, nil
+	}
+
+	currentQuery := parsedURL.Query()
+	for key, values := range query {
+		for _, value := range values {
+			currentQuery.Add(key, value)
+		}
+	}
+	parsedURL.RawQuery = currentQuery.Encode()
+	return parsedURL, nil
+}
+
+func applyMetadata(req *http.Request, cfg *callConfig, contentType string) {
 	for key, values := range cfg.headers {
 		for _, value := range values {
 			req.Header.Add(key, value)
@@ -79,8 +102,6 @@ func buildRequest(method, rawURL string, cfg *callConfig) (*http.Request, error)
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
-
-	return req, nil
 }
 
 func prepareBody(cfg *callConfig) (io.Reader, string, error) {
