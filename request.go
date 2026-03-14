@@ -124,43 +124,66 @@ func prepareMultipartBody(cfg *callConfig) (io.Reader, string, error) {
 	mw := multipart.NewWriter(pw)
 
 	go func() {
-		var err error
-		defer func() {
-			if closeErr := mw.Close(); err == nil && closeErr != nil {
-				err = fmt.Errorf("failed to close multipart writer: %w", closeErr)
-			}
-			pw.CloseWithError(err)
-		}()
-
-		for key, values := range cfg.multipartFields {
-			for _, value := range values {
-				if err = mw.WriteField(key, value); err != nil {
-					err = fmt.Errorf("failed to write multipart field %q: %w", key, err)
-					return
-				}
-			}
+		err := writeMultipartContent(mw, cfg)
+		if closeErr := mw.Close(); err == nil && closeErr != nil {
+			err = fmt.Errorf("failed to close multipart writer: %w", closeErr)
 		}
-
-		for _, file := range cfg.multipartFiles {
-			writer, createErr := mw.CreateFormFile(file.fieldname, file.filename)
-			if createErr != nil {
-				err = fmt.Errorf("failed to create multipart file %q: %w", file.filename, createErr)
-				return
-			}
-			if _, copyErr := io.Copy(writer, file.content); copyErr != nil {
-				err = fmt.Errorf("failed to copy multipart file %q: %w", file.filename, copyErr)
-				return
-			}
-			if closer, ok := file.content.(io.Closer); ok {
-				if closeErr := closer.Close(); err == nil && closeErr != nil {
-					err = fmt.Errorf("failed to close multipart file %q: %w", file.filename, closeErr)
-					return
-				}
-			}
-		}
+		pw.CloseWithError(err)
 	}()
 
 	return pr, mw.FormDataContentType(), nil
+}
+
+func writeMultipartContent(mw *multipart.Writer, cfg *callConfig) error {
+	if err := writeMultipartFields(mw, cfg.multipartFields); err != nil {
+		return err
+	}
+	return writeMultipartFiles(mw, cfg.multipartFiles)
+}
+
+func writeMultipartFields(mw *multipart.Writer, fields url.Values) error {
+	for key, values := range fields {
+		for _, value := range values {
+			if err := mw.WriteField(key, value); err != nil {
+				return fmt.Errorf("failed to write multipart field %q: %w", key, err)
+			}
+		}
+	}
+	return nil
+}
+
+func writeMultipartFiles(mw *multipart.Writer, files []multipartFile) error {
+	for _, file := range files {
+		if err := writeOneFile(mw, file); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeOneFile(mw *multipart.Writer, file multipartFile) error {
+	writer, err := mw.CreateFormFile(file.fieldname, file.filename)
+	if err != nil {
+		return fmt.Errorf("failed to create multipart file %q: %w", file.filename, err)
+	}
+
+	if _, err := io.Copy(writer, file.content); err != nil {
+		return fmt.Errorf("failed to copy multipart file %q: %w", file.filename, err)
+	}
+
+	return closeMultipartFile(file.content, file.filename)
+}
+
+func closeMultipartFile(content io.Reader, filename string) error {
+	closer, ok := content.(io.Closer)
+	if !ok {
+		return nil
+	}
+
+	if err := closer.Close(); err != nil {
+		return fmt.Errorf("failed to close multipart file %q: %w", filename, err)
+	}
+	return nil
 }
 
 // WithContext sets the request context.
