@@ -36,7 +36,7 @@ func transportFor(cfg *callConfig) (*http.Transport, func(), error) {
 
 func applyTransportOptions(transport *http.Transport, cfg *callConfig) error {
 	applyProxy(transport, cfg)
-	
+
 	if err := applyLocalAddr(transport, cfg); err != nil {
 		return err
 	}
