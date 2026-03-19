@@ -3,6 +3,7 @@ package fetch
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 )
 
 var defaultRequestTimeout = 5 * time.Second
+var defaultResponseBodyLimit int64 = 10 << 20
 
 // Option configures a single request execution.
 type Option func(cfg *callConfig) error
@@ -18,8 +20,9 @@ type Option func(cfg *callConfig) error
 type RequestOption = Option
 
 type callConfig struct {
-	ctx     context.Context
-	timeout time.Duration
+	ctx               context.Context
+	timeout           time.Duration
+	responseBodyLimit int64
 
 	userAgent   string
 	contentType string
@@ -42,10 +45,11 @@ type callConfig struct {
 
 func newCallConfig(opts ...Option) (*callConfig, error) {
 	cfg := &callConfig{
-		ctx:     context.Background(),
-		timeout: defaultRequestTimeout,
-		headers: make(http.Header),
-		cookies: []*http.Cookie{},
+		ctx:               context.Background(),
+		timeout:           defaultRequestTimeout,
+		responseBodyLimit: defaultResponseBodyLimit,
+		headers:           make(http.Header),
+		cookies:           []*http.Cookie{},
 	}
 
 	for _, opt := range opts {
@@ -66,4 +70,16 @@ func (cfg *callConfig) contextWithTimeout() (context.Context, context.CancelFunc
 
 func (cfg *callConfig) hasTransportOverrides() bool {
 	return cfg.proxySet || cfg.localAddrSet || cfg.tlsConfig != nil
+}
+
+// WithResponseBodyLimit sets the maximum number of bytes read from the response body.
+// Passing 0 disables the limit for the current request.
+func WithResponseBodyLimit(limit int64) Option {
+	return func(cfg *callConfig) error {
+		if limit < 0 {
+			return fmt.Errorf("response body limit cannot be negative")
+		}
+		cfg.responseBodyLimit = limit
+		return nil
+	}
 }

@@ -137,6 +137,9 @@ func prepareMultipartBody(cfg *callConfig) (io.Reader, string, error) {
 
 func writeMultipartContent(mw *multipart.Writer, cfg *callConfig) error {
 	if err := writeMultipartFields(mw, cfg.multipartFields); err != nil {
+		if closeErr := closeMultipartFiles(cfg.multipartFiles); closeErr != nil {
+			return closeErr
+		}
 		return err
 	}
 	return writeMultipartFiles(mw, cfg.multipartFiles)
@@ -154,8 +157,20 @@ func writeMultipartFields(mw *multipart.Writer, fields url.Values) error {
 }
 
 func writeMultipartFiles(mw *multipart.Writer, files []multipartFile) error {
-	for _, file := range files {
+	for i, file := range files {
 		if err := writeOneFile(mw, file); err != nil {
+			if closeErr := closeMultipartFiles(files[i+1:]); closeErr != nil {
+				return closeErr
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func closeMultipartFiles(files []multipartFile) error {
+	for _, file := range files {
+		if err := closeMultipartFile(file.content, file.filename); err != nil {
 			return err
 		}
 	}

@@ -7,6 +7,7 @@
 - 默认无状态，不保存 Cookie 会话。
 - 不自动跟随重定向。
 - 默认总超时为 `5s`。
+- 默认响应体大小上限为 `10 MiB`。
 - `Get`、`Post`、`Do` 等方法直接接收当次请求的全部参数。
 - 默认复用内部 `Transport` 以获得更好的连接复用性能。
 - 当使用 `WithProxy`、`WithLocalAddr`、`WithTLSConfig` 时，会按连接参数选择内部 `Transport`。
@@ -68,6 +69,7 @@ fetch.Head(url, opts...)
 ```go
 fetch.WithContext(ctx)
 fetch.WithTimeout(5 * time.Second)
+fetch.WithResponseBodyLimit(10 << 20)
 fetch.WithUserAgent("my-agent/1.0")
 ```
 
@@ -75,6 +77,8 @@ fetch.WithUserAgent("my-agent/1.0")
 
 - 默认总超时为 `5s`。
 - `fetch.WithTimeout(0)` 会禁用默认超时。
+- 默认响应体大小上限为 `10 MiB`。
+- `fetch.WithResponseBodyLimit(0)` 会禁用响应体大小限制。
 
 ### 请求头、Cookie、Query
 
@@ -184,6 +188,7 @@ res.JSON(&dst)
 - `Response.Header` 是响应头的便捷打平视图, 多值头会被合并, 不适合作为完整 HTTP 语义来源。
 - `Response.Cookie` 和 `Response.Cookies` 也是便捷视图, 同名 Cookie 可能被覆盖, 不保留完整属性。
 - 需要完整响应头和 Cookie 语义时, 请使用 `Response.Headers` 和 `Response.CookiesList`。
+- 响应体会先完整读入 `Response.Body`; 默认单次读取上限为 `10 MiB`。
 
 ## 兼容别名
 

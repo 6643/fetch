@@ -1,11 +1,13 @@
 package fetch
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -13,6 +15,23 @@ import (
 	"testing"
 	"time"
 )
+
+type trackingReadCloser struct {
+	readErr error
+	closed  bool
+}
+
+func (r *trackingReadCloser) Read(_ []byte) (int, error) {
+	if r.readErr != nil {
+		return 0, r.readErr
+	}
+	return 0, io.EOF
+}
+
+func (r *trackingReadCloser) Close() error {
+	r.closed = true
+	return nil
+}
 
 func TestGetRequest(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -314,6 +333,28 @@ func TestAddMultipartFileRejectsNilContent(t *testing.T) {
 	}
 }
 
+func TestWriteMultipartFilesClosesRemainingReadersOnFailure(t *testing.T) {
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+
+	first := &trackingReadCloser{readErr: errors.New("read failed")}
+	second := &trackingReadCloser{}
+
+	err := writeMultipartFiles(mw, []multipartFile{
+		{fieldname: "file1", filename: "first.txt", content: first},
+		{fieldname: "file2", filename: "second.txt", content: second},
+	})
+	if err == nil {
+		t.Fatal("expected multipart write error")
+	}
+	if !first.closed {
+		t.Fatal("expected failed reader to be closed")
+	}
+	if !second.closed {
+		t.Fatal("expected remaining reader to be closed")
+	}
+}
+
 func TestRequestRejectsBodyForLowercaseGet(t *testing.T) {
 	_, err := Request("get", "http://example.com", WithJSON(map[string]string{"a": "b"}))
 	if err == nil {
@@ -391,6 +432,45 @@ func TestWithTimeoutZeroDisablesDefaultTimeout(t *testing.T) {
 	}
 	if res.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected status code 204, got %d", res.StatusCode)
+	}
+}
+
+func TestDefaultResponseBodyLimit(t *testing.T) {
+	original := defaultResponseBodyLimit
+	defaultResponseBodyLimit = 8
+	defer func() {
+		defaultResponseBodyLimit = original
+	}()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("123456789"))
+	}))
+	defer srv.Close()
+
+	_, err := Get(srv.URL)
+	if err == nil {
+		t.Fatal("expected response body limit error")
+	}
+}
+
+func TestWithResponseBodyLimitZeroDisablesLimit(t *testing.T) {
+	original := defaultResponseBodyLimit
+	defaultResponseBodyLimit = 8
+	defer func() {
+		defaultResponseBodyLimit = original
+	}()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("123456789"))
+	}))
+	defer srv.Close()
+
+	res, err := Get(srv.URL, WithResponseBodyLimit(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Text() != "123456789" {
+		t.Fatalf("unexpected response body: %s", res.Text())
 	}
 }
 

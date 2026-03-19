@@ -38,12 +38,27 @@ func Do(method, url string, opts ...Option) (*Response, error) {
 	}
 	defer httpResponse.Body.Close()
 
-	bodyBytes, err := io.ReadAll(httpResponse.Body)
+	bodyBytes, err := readResponseBody(httpResponse.Body, cfg.responseBodyLimit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	return buildResponse(httpResponse, bodyBytes), nil
+}
+
+func readResponseBody(body io.Reader, limit int64) ([]byte, error) {
+	if limit <= 0 {
+		return io.ReadAll(body)
+	}
+
+	bodyBytes, err := io.ReadAll(io.LimitReader(body, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(bodyBytes)) > limit {
+		return nil, fmt.Errorf("response body exceeds limit of %d bytes", limit)
+	}
+	return bodyBytes, nil
 }
 
 // Get sends a GET request.
