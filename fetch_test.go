@@ -307,6 +307,27 @@ func TestAddFileData(t *testing.T) {
 	}
 }
 
+func TestAddMultipartFileRejectsNilContent(t *testing.T) {
+	_, err := Post("http://example.com", AddMultipartFile("file", "a.txt", nil))
+	if err == nil {
+		t.Fatal("expected nil multipart content error")
+	}
+}
+
+func TestRequestRejectsBodyForLowercaseGet(t *testing.T) {
+	_, err := Request("get", "http://example.com", WithJSON(map[string]string{"a": "b"}))
+	if err == nil {
+		t.Fatal("expected body validation error")
+	}
+}
+
+func TestRequestRejectsBodyForMixedCaseHead(t *testing.T) {
+	_, err := Request("HeAd", "http://example.com", WithBody("text/plain", strings.NewReader("x")))
+	if err == nil {
+		t.Fatal("expected body validation error")
+	}
+}
+
 func TestDefaultTimeout(t *testing.T) {
 	original := defaultRequestTimeout
 	defaultRequestTimeout = 20 * time.Millisecond
@@ -351,6 +372,28 @@ func TestWithTimeoutOverride(t *testing.T) {
 	}
 }
 
+func TestWithTimeoutZeroDisablesDefaultTimeout(t *testing.T) {
+	original := defaultRequestTimeout
+	defaultRequestTimeout = 20 * time.Millisecond
+	defer func() {
+		defaultRequestTimeout = original
+	}()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(50 * time.Millisecond)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	res, err := Get(srv.URL, WithTimeout(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected status code 204, got %d", res.StatusCode)
+	}
+}
+
 func TestResponseRedirectAndCookies(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/target" {
@@ -385,6 +428,51 @@ func TestResponseRedirectAndCookies(t *testing.T) {
 	}
 }
 
+func TestResponseHeaderCompatibilityView(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Link", "<https://example.com/a>; rel=preload")
+		w.Header().Add("Link", "<https://example.com/b>; rel=next")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	res, err := Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := res.Headers.Values("Link"); !reflect.DeepEqual(got, []string{"<https://example.com/a>; rel=preload", "<https://example.com/b>; rel=next"}) {
+		t.Fatalf("unexpected raw link headers: %#v", got)
+	}
+	if got := res.Header["Link"]; got != "<https://example.com/a>; rel=preload; <https://example.com/b>; rel=next" {
+		t.Fatalf("unexpected flattened link header: %s", got)
+	}
+}
+
+func TestResponseCookieCompatibilityView(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.SetCookie(w, &http.Cookie{Name: "session", Value: "root", Path: "/"})
+		http.SetCookie(w, &http.Cookie{Name: "session", Value: "admin", Path: "/admin"})
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	res, err := Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(res.CookiesList) != 2 {
+		t.Fatalf("expected 2 cookies, got %#v", res.CookiesList)
+	}
+	if got := res.Cookie["session"]; got != "admin" {
+		t.Fatalf("unexpected compatibility cookie value: %s", got)
+	}
+	if got := res.Cookies; got != "session=root; session=admin" {
+		t.Fatalf("unexpected cookies summary: %s", got)
+	}
+}
+
 func TestWithTLSConfig(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -408,6 +496,117 @@ func TestWithTLSConfig(t *testing.T) {
 	}
 	if res.Text() != "secure" {
 		t.Fatalf("unexpected response body: %s", res.Text())
+	}
+}
+
+func TestTransportForReusesProxyOnlyOverrides(t *testing.T) {
+	resetOverrideTransportCache()
+	defer resetOverrideTransportCache()
+
+	cfgA, err := newCallConfig(WithProxy(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfgB, err := newCallConfig(WithProxy(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	transportA, _, err := transportFor(cfgA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transportB, _, err := transportFor(cfgB)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if transportA != transportB {
+		t.Fatal("expected proxy-only overrides to reuse cached transport")
+	}
+}
+
+func TestTransportForDoesNotCacheNewKeyWhenCacheIsFull(t *testing.T) {
+	resetOverrideTransportCache()
+	defer resetOverrideTransportCache()
+
+	originalLimit := maxOverrideTransportCacheEntries
+	maxOverrideTransportCacheEntries = 1
+	defer func() {
+		maxOverrideTransportCacheEntries = originalLimit
+	}()
+
+	firstCfg, err := newCallConfig(WithProxy(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstTransport, cleanup, err := transportFor(firstCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleanup != nil {
+		defer cleanup()
+	}
+
+	secondCfg, err := newCallConfig(WithLocalAddr("127.0.0.1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondTransport, secondCleanup, err := transportFor(secondCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondCleanup == nil {
+		t.Fatal("expected uncached transport cleanup when cache is full")
+	}
+	defer secondCleanup()
+
+	secondTransportRepeat, secondCleanupRepeat, err := transportFor(secondCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondCleanupRepeat == nil {
+		t.Fatal("expected uncached transport cleanup on repeated overflow key")
+	}
+	defer secondCleanupRepeat()
+
+	if firstTransport == secondTransport {
+		t.Fatal("expected different transport for different override key")
+	}
+	if secondTransport == secondTransportRepeat {
+		t.Fatal("expected overflow key to bypass cache")
+	}
+	if got := overrideTransportCacheEntries.Load(); got != 1 {
+		t.Fatalf("expected cache entry count to stay at 1, got %d", got)
+	}
+}
+
+func TestWithTLSConfigUsesUpdatedConfigOnRepeatedCalls(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("secure"))
+	}))
+	defer srv.Close()
+
+	baseTransport, ok := srv.Client().Transport.(*http.Transport)
+	if !ok {
+		t.Fatal("expected *http.Transport from test tls client")
+	}
+	tlsConfig := baseTransport.TLSClientConfig.Clone()
+
+	res, err := Get(srv.URL, WithTLSConfig(tlsConfig), WithTimeout(200*time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Text() != "secure" {
+		t.Fatalf("unexpected response body: %s", res.Text())
+	}
+
+	tlsConfig.RootCAs = nil
+
+	_, err = Get(srv.URL, WithTLSConfig(tlsConfig), WithTimeout(200*time.Millisecond))
+	if err == nil {
+		t.Fatal("expected tls verification error after config mutation")
 	}
 }
 
@@ -446,10 +645,40 @@ func TestWithProxy(t *testing.T) {
 	}
 }
 
+func TestWithProxyRejectsSchemalessURL(t *testing.T) {
+	_, err := newCallConfig(WithProxy("localhost:8080"))
+	if err == nil {
+		t.Fatal("expected invalid proxy url error")
+	}
+}
+
+func TestWithProxyRejectsRelativeURL(t *testing.T) {
+	_, err := newCallConfig(WithProxy("/relative"))
+	if err == nil {
+		t.Fatal("expected invalid proxy url error")
+	}
+}
+
 func TestWithLocalAddrRejectsInvalidIP(t *testing.T) {
 	_, err := Get("http://example.com", WithLocalAddr("not-an-ip"))
 	if err == nil {
 		t.Fatal("expected invalid local address error")
+	}
+}
+
+func TestNewLocalDialerMatchesDefaultDialerTimeouts(t *testing.T) {
+	dialer, err := newLocalDialer("127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dialer.Timeout != 30*time.Second {
+		t.Fatalf("expected 30s timeout, got %v", dialer.Timeout)
+	}
+	if dialer.KeepAlive != 30*time.Second {
+		t.Fatalf("expected 30s keepalive, got %v", dialer.KeepAlive)
+	}
+	if dialer.LocalAddr == nil {
+		t.Fatal("expected local addr to be set")
 	}
 }
 

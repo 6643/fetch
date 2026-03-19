@@ -61,6 +61,7 @@ func buildRequest(method, rawURL string, cfg *callConfig) (*http.Request, error)
 }
 
 func validateMethod(method string, bType bodyType) error {
+	method = strings.ToUpper(method)
 	if (method == http.MethodGet || method == http.MethodHead) && bType != bodyTypeNone {
 		return fmt.Errorf("%s method should not have a request body", method)
 	}
@@ -162,12 +163,22 @@ func writeMultipartFiles(mw *multipart.Writer, files []multipartFile) error {
 }
 
 func writeOneFile(mw *multipart.Writer, file multipartFile) error {
+	if file.content == nil {
+		return fmt.Errorf("multipart file %q content cannot be nil", file.filename)
+	}
+
 	writer, err := mw.CreateFormFile(file.fieldname, file.filename)
 	if err != nil {
+		if closeErr := closeMultipartFile(file.content, file.filename); closeErr != nil {
+			return closeErr
+		}
 		return fmt.Errorf("failed to create multipart file %q: %w", file.filename, err)
 	}
 
 	if _, err := io.Copy(writer, file.content); err != nil {
+		if closeErr := closeMultipartFile(file.content, file.filename); closeErr != nil {
+			return closeErr
+		}
 		return fmt.Errorf("failed to copy multipart file %q: %w", file.filename, err)
 	}
 
@@ -305,6 +316,9 @@ func AddMultipartField(key, value string) Option {
 // AddMultipartFile adds a multipart file.
 func AddMultipartFile(fieldname, filename string, content io.Reader) Option {
 	return func(cfg *callConfig) error {
+		if content == nil {
+			return fmt.Errorf("multipart file %q content cannot be nil", filename)
+		}
 		if err := setBodyType(cfg, bodyTypeMultipart); err != nil {
 			return err
 		}

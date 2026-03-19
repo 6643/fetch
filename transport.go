@@ -7,10 +7,23 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
 var defaultTransport = newDefaultTransport()
+var overrideTransportCache sync.Map
+var overrideTransportCacheEntries atomic.Int64
+
+var maxOverrideTransportCacheEntries int64 = 64
+
+type transportCacheKey struct {
+	proxySet     bool
+	proxyURL     string
+	localAddrSet bool
+	localAddr    string
+}
 
 func newDefaultTransport() *http.Transport {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
@@ -25,13 +38,73 @@ func transportFor(cfg *callConfig) (*http.Transport, func(), error) {
 	if !cfg.hasTransportOverrides() {
 		return defaultTransport, nil, nil
 	}
+	if cfg.tlsConfig != nil {
+		transport := defaultTransport.Clone()
+		if err := applyTransportOptions(transport, cfg); err != nil {
+			return nil, nil, err
+		}
+		return transport, transport.CloseIdleConnections, nil
+	}
+
+	cacheKey := newTransportCacheKey(cfg)
+	if cachedTransport, ok := loadCachedTransport(cacheKey); ok {
+		return cachedTransport, nil, nil
+	}
 
 	transport := defaultTransport.Clone()
 	if err := applyTransportOptions(transport, cfg); err != nil {
 		return nil, nil, err
 	}
 
-	return transport, transport.CloseIdleConnections, nil
+	cachedTransport, cached := storeCachedTransport(cacheKey, transport)
+	if !cached {
+		return cachedTransport, cachedTransport.CloseIdleConnections, nil
+	}
+	return cachedTransport, nil, nil
+}
+
+func newTransportCacheKey(cfg *callConfig) transportCacheKey {
+	key := transportCacheKey{
+		proxySet:     cfg.proxySet,
+		localAddrSet: cfg.localAddrSet,
+		localAddr:    cfg.localAddr,
+	}
+	if cfg.proxyURL != nil {
+		key.proxyURL = cfg.proxyURL.String()
+	}
+	return key
+}
+
+func loadCachedTransport(key transportCacheKey) (*http.Transport, bool) {
+	transport, ok := overrideTransportCache.Load(key)
+	if !ok {
+		return nil, false
+	}
+	return transport.(*http.Transport), true
+}
+
+func storeCachedTransport(key transportCacheKey, transport *http.Transport) (*http.Transport, bool) {
+	if overrideTransportCacheEntries.Load() >= maxOverrideTransportCacheEntries {
+		return transport, false
+	}
+
+	actualTransport, loaded := overrideTransportCache.LoadOrStore(key, transport)
+	if loaded {
+		transport.CloseIdleConnections()
+		return actualTransport.(*http.Transport), true
+	}
+	overrideTransportCacheEntries.Add(1)
+	if overrideTransportCacheEntries.Load() > maxOverrideTransportCacheEntries {
+		overrideTransportCache.Delete(key)
+		overrideTransportCacheEntries.Add(-1)
+		return transport, false
+	}
+	return transport, true
+}
+
+func resetOverrideTransportCache() {
+	overrideTransportCache = sync.Map{}
+	overrideTransportCacheEntries.Store(0)
 }
 
 func applyTransportOptions(transport *http.Transport, cfg *callConfig) error {
@@ -79,17 +152,25 @@ func applyTLSConfig(transport *http.Transport, cfg *callConfig) {
 }
 
 func newDialContext(localAddr string) (func(ctx context.Context, network, address string) (net.Conn, error), error) {
+	dialer, err := newLocalDialer(localAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	return dialer.DialContext, nil
+}
+
+func newLocalDialer(localAddr string) (*net.Dialer, error) {
 	ip := net.ParseIP(localAddr)
 	if ip == nil {
 		return nil, fmt.Errorf("invalid local address %q", localAddr)
 	}
 
-	dialer := &net.Dialer{
+	return &net.Dialer{
+		Timeout:   30 * time.Second,
 		KeepAlive: 30 * time.Second,
 		LocalAddr: &net.TCPAddr{IP: ip},
-	}
-
-	return dialer.DialContext, nil
+	}, nil
 }
 
 // WithProxy routes the current request through the provided proxy URL.
@@ -105,6 +186,9 @@ func WithProxy(rawURL string) Option {
 		parsedURL, err := url.Parse(rawURL)
 		if err != nil {
 			return fmt.Errorf("failed to parse proxy url %q: %w", rawURL, err)
+		}
+		if !parsedURL.IsAbs() || parsedURL.Scheme == "" || parsedURL.Host == "" {
+			return fmt.Errorf("proxy url %q must be an absolute URL", rawURL)
 		}
 
 		cfg.proxyURL = parsedURL
