@@ -141,6 +141,48 @@ func TestPostJSONBody(t *testing.T) {
 	}
 }
 
+func TestWithJSONRejectsExplicitContentTypeHeader(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	_, err := Post(
+		srv.URL,
+		AddHeader("Content-Type", "application/problem+json"),
+		WithJSON(map[string]string{"key": "value"}),
+	)
+	if !errors.Is(err, ErrContentTypeConflict) {
+		t.Fatalf("expected ErrContentTypeConflict, got %v", err)
+	}
+	if hits != 0 {
+		t.Fatalf("expected request to fail before sending, got %d hits", hits)
+	}
+}
+
+func TestSetJSONBodyRejectsExplicitContentTypeHeader(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	_, err := Post(
+		srv.URL,
+		AddHeader("Content-Type", "application/problem+json"),
+		SetJSONBody(`{"key":"value"}`),
+	)
+	if !errors.Is(err, ErrContentTypeConflict) {
+		t.Fatalf("expected ErrContentTypeConflict, got %v", err)
+	}
+	if hits != 0 {
+		t.Fatalf("expected request to fail before sending, got %d hits", hits)
+	}
+}
+
 func TestPostXMLBody(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Content-Type"); got != "application/xml" {
@@ -202,6 +244,27 @@ func TestPostForm(t *testing.T) {
 	}
 	if !reflect.DeepEqual(form["bbb"], []string{"value"}) {
 		t.Fatalf("unexpected form value: %#v", form["bbb"])
+	}
+}
+
+func TestFormBodyRejectsExplicitContentTypeHeader(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	_, err := Post(
+		srv.URL,
+		AddHeader("Content-Type", "application/json"),
+		AddFormValue("aaa", "first"),
+	)
+	if !errors.Is(err, ErrContentTypeConflict) {
+		t.Fatalf("expected ErrContentTypeConflict, got %v", err)
+	}
+	if hits != 0 {
+		t.Fatalf("expected request to fail before sending, got %d hits", hits)
 	}
 }
 
@@ -326,6 +389,65 @@ func TestAddFileData(t *testing.T) {
 	}
 }
 
+func TestMultipartRejectsExplicitContentTypeHeader(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	_, err := Post(
+		srv.URL,
+		AddHeader("Content-Type", "multipart/form-data"),
+		AddFileData("file", "data.txt", []byte("from bytes")),
+	)
+	if !errors.Is(err, ErrContentTypeConflict) {
+		t.Fatalf("expected ErrContentTypeConflict, got %v", err)
+	}
+	if hits != 0 {
+		t.Fatalf("expected request to fail before sending, got %d hits", hits)
+	}
+}
+
+func TestWithBodyWithoutContentTypeAllowsExplicitHeader(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Content-Type"); got != "application/custom" {
+			t.Fatalf("unexpected content type: %s", got)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	_, err := Post(
+		srv.URL,
+		AddHeader("Content-Type", "application/custom"),
+		WithBody("", strings.NewReader("payload")),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWithBodyWithoutContentTypeAllowsExplicitHeaderRegardlessOfOptionOrder(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Content-Type"); got != "application/custom" {
+			t.Fatalf("unexpected content type: %s", got)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	_, err := Post(
+		srv.URL,
+		WithBody("", strings.NewReader("payload")),
+		AddHeader("Content-Type", "application/custom"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAddMultipartFileRejectsNilContent(t *testing.T) {
 	_, err := Post("http://example.com", AddMultipartFile("file", "a.txt", nil))
 	if err == nil {
@@ -435,6 +557,24 @@ func TestWithTimeoutZeroDisablesDefaultTimeout(t *testing.T) {
 	}
 }
 
+func TestResponseJSONReturnsErrEmptyBodyForNoContent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	res, err := Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var dst map[string]any
+	err = res.JSON(&dst)
+	if !errors.Is(err, ErrEmptyBody) {
+		t.Fatalf("expected ErrEmptyBody, got %v", err)
+	}
+}
+
 func TestDefaultResponseBodyLimit(t *testing.T) {
 	original := defaultResponseBodyLimit
 	defaultResponseBodyLimit = 8
@@ -508,7 +648,7 @@ func TestResponseRedirectAndCookies(t *testing.T) {
 	}
 }
 
-func TestResponseHeaderCompatibilityView(t *testing.T) {
+func TestResponseHeaderCompatibilityViewIsLossy(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Link", "<https://example.com/a>; rel=preload")
 		w.Header().Add("Link", "<https://example.com/b>; rel=next")
@@ -529,7 +669,7 @@ func TestResponseHeaderCompatibilityView(t *testing.T) {
 	}
 }
 
-func TestResponseCookieCompatibilityView(t *testing.T) {
+func TestResponseCookieCompatibilityViewIsLossy(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, &http.Cookie{Name: "session", Value: "root", Path: "/"})
 		http.SetCookie(w, &http.Cookie{Name: "session", Value: "admin", Path: "/admin"})

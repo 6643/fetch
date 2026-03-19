@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -28,6 +29,10 @@ type multipartFile struct {
 	content   io.Reader
 }
 
+// ErrContentTypeConflict is returned when a manual Content-Type header conflicts
+// with a body option that defines its own Content-Type.
+var ErrContentTypeConflict = errors.New("content-type header conflicts with body option")
+
 func setBodyType(cfg *callConfig, newType bodyType) error {
 	if cfg.bodySetType != bodyTypeNone && cfg.bodySetType != newType {
 		return fmt.Errorf("cannot set multiple body types. already set to %v, trying to set %v", cfg.bodySetType, newType)
@@ -43,6 +48,10 @@ func buildRequest(method, rawURL string, cfg *callConfig) (*http.Request, error)
 
 	parsedURL, err := finalizeURL(rawURL, cfg.query)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := validateConfiguredContentTypeConflict(cfg); err != nil {
 		return nil, err
 	}
 
@@ -102,6 +111,30 @@ func applyMetadata(req *http.Request, cfg *callConfig, contentType string) {
 	}
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
+	}
+}
+
+func validateConfiguredContentTypeConflict(cfg *callConfig) error {
+	contentType := expectedContentType(cfg)
+	if contentType == "" {
+		return nil
+	}
+	if len(cfg.headers.Values("Content-Type")) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w; use body options to set Content-Type", ErrContentTypeConflict)
+}
+
+func expectedContentType(cfg *callConfig) string {
+	switch cfg.bodySetType {
+	case bodyTypeFormURLEncoded:
+		return "application/x-www-form-urlencoded"
+	case bodyTypeMultipart:
+		return "multipart/form-data"
+	case bodyTypeRaw:
+		return cfg.contentType
+	default:
+		return ""
 	}
 }
 

@@ -96,6 +96,12 @@ fetch.WithJSON(v)
 fetch.WithXML("<root />")
 ```
 
+说明:
+
+- `Content-Type` 应优先通过 `WithBody`、`WithJSON`、`WithXML`、表单和 multipart API 设置。
+- 不要把 `fetch.AddHeader("Content-Type", ...)` 与这些 body 选项混用; 当前实现会返回 `fetch.ErrContentTypeConflict`, 且请求不会被发送。
+- 如果你需要自己完全控制 `Content-Type`, 请使用 `fetch.WithBody("", body)` 再配合 `fetch.AddHeader("Content-Type", ...)`。
+
 ### 表单与文件上传
 
 ```go
@@ -183,11 +189,16 @@ res.Text()
 res.JSON(&dst)
 ```
 
+说明:
+
+- 当响应体为空时, `res.JSON(&dst)` 会返回 `fetch.ErrEmptyBody`。
+
 兼容字段说明:
 
 - `Response.Header` 是响应头的便捷打平视图, 多值头会被合并, 不适合作为完整 HTTP 语义来源。
-- `Response.Cookie` 和 `Response.Cookies` 也是便捷视图, 同名 Cookie 可能被覆盖, 不保留完整属性。
-- 需要完整响应头和 Cookie 语义时, 请使用 `Response.Headers` 和 `Response.CookiesList`。
+- `Response.Cookie` 是按名称索引的兼容视图; 同名 Cookie 会以后出现者覆盖先出现者。
+- `Response.Cookies` 是由解析后的响应 Cookie 生成的 `name=value` 摘要串, 不是原始 `Set-Cookie` 头, 也不适合作为无损回放格式。
+- 新代码需要完整响应头和 Cookie 语义时, 请优先使用 `Response.Headers` 和 `Response.CookiesList`。
 - 响应体会先完整读入 `Response.Body`; 默认单次读取上限为 `10 MiB`。
 
 ## 兼容别名

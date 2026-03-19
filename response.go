@@ -2,20 +2,28 @@ package fetch
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 )
+
+// ErrEmptyBody is returned by Response.JSON when the response body is empty.
+var ErrEmptyBody = errors.New("response body is empty")
 
 // Response represents an HTTP response.
 type Response struct {
 	StatusCode int
 	Status     string
 	Location   string
-	// Cookie contains a map of cookie names to values from the response.
+	// Cookie contains a lossy compatibility view of response cookies keyed by name.
+	// If multiple cookies share the same name, the last parsed value wins.
 	Cookie map[string]string
-	// Cookies contains the raw Cookie string from the response, separated by semicolons.
+	// Cookies contains a lossy compatibility summary string built from parsed
+	// response cookies as "name=value" pairs joined by semicolons. It is not the
+	// raw Set-Cookie header value and should not be treated as a lossless replay format.
 	Cookies string
-	// CookiesList contains the parsed cookies from the response.
+	// CookiesList contains the parsed response cookies and is the preferred field
+	// for new code that needs complete cookie semantics.
 	CookiesList []*http.Cookie
 	// Header contains a flattened view of response headers for compatibility.
 	Header map[string]string
@@ -78,6 +86,9 @@ func extractCookies(res *Response, cookies []*http.Cookie) {
 
 // JSON unmarshals the response body into the given interface.
 func (r *Response) JSON(v interface{}) error {
+	if len(r.Body) == 0 {
+		return ErrEmptyBody
+	}
 	return json.Unmarshal(r.Body, v)
 }
 
