@@ -98,8 +98,3 @@ func Patch(url string, opts ...Option) (*Response, error) {
 func Head(url string, opts ...Option) (*Response, error) {
 	return Do(http.MethodHead, url, opts...)
 }
-
-// Request is kept for compatibility with older call sites.
-func Request(method, url string, opts ...Option) (*Response, error) {
-	return Do(method, url, opts...)
-}

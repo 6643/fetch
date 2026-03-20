@@ -16,9 +16,6 @@ var defaultResponseBodyLimit int64 = 10 << 20
 // Option configures a single request execution.
 type Option func(cfg *callConfig) error
 
-// RequestOption is kept as an alias for compatibility with older call sites.
-type RequestOption = Option
-
 type callConfig struct {
 	ctx               context.Context
 	timeout           time.Duration

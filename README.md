@@ -10,7 +10,7 @@
 - 默认响应体大小上限为 `10 MiB`。
 - `Get`、`Post`、`Do` 等方法直接接收当次请求的全部参数。
 - 标准 HTTP 方法会按规范大写发送；空方法会按 `GET` 处理。
-- `GET`、`HEAD` 请求不允许携带请求体，包括通过 `Do`、`Request` 传入时也是如此。
+- `GET`、`HEAD` 请求不允许携带请求体，包括通过 `Do` 传入时也是如此。
 - 默认复用内部 `Transport` 以获得更好的连接复用性能。
 - 当使用 `WithProxy`、`WithLocalAddr`、`WithTLSConfig` 时，会按连接参数选择内部 `Transport`。
 - 相同的 `WithProxy`、`WithLocalAddr` 参数会复用内部 `Transport`, 以保留 keep-alive 连接复用收益。
@@ -68,7 +68,7 @@ fetch.Head(url, opts...)
 
 说明:
 
-- `fetch.Do("", url, opts...)` 和 `fetch.Request("", url, opts...)` 会按 `GET` 发送。
+- `fetch.Do("", url, opts...)` 会按 `GET` 发送。
 - 标准方法名会被规范化为大写后再发出；非标准扩展方法保持原样。
 
 ## 可用参数
@@ -101,16 +101,14 @@ fetch.AddQuery("q", "golang")
 ### Body
 
 ```go
-fetch.WithBody("application/json", reader)
 fetch.WithJSON(v)
 fetch.WithXML("<root />")
 ```
 
 说明:
 
-- `Content-Type` 应优先通过 `WithBody`、`WithJSON`、`WithXML`、表单和 multipart API 设置。
+- `Content-Type` 应优先通过 `WithJSON`、`WithXML`、表单和 multipart API 设置。
 - 不要把 `fetch.AddHeader("Content-Type", ...)` 与这些 body 选项混用; 当前实现会返回 `fetch.ErrContentTypeConflict`, 且请求不会被发送。
-- 如果你需要自己完全控制 `Content-Type`, 请使用 `fetch.WithBody("", body)` 再配合 `fetch.AddHeader("Content-Type", ...)`。
 
 ### 表单与文件上传
 
@@ -210,20 +208,6 @@ res.JSON(&dst)
 - `Response.Cookies` 是由解析后的响应 Cookie 生成的 `name=value` 摘要串, 不是原始 `Set-Cookie` 头, 也不适合作为无损回放格式。
 - 新代码需要完整响应头和 Cookie 语义时, 请优先使用 `Response.Headers` 和 `Response.CookiesList`。
 - 响应体会先完整读入 `Response.Body`; 默认单次读取上限为 `10 MiB`。
-
-## 兼容别名
-
-为了兼容旧调用，下面这些名字仍然可用，并会转发到新接口：
-
-- `Request`
-- `SetUserAgent`
-- `SetBody`
-- `SetJSONBody`
-- `SetXMLBody`
-- `AddData`
-- `AddField`
-- `AddFile`
-- `AddUrlArg`
 
 ## 实现说明
 

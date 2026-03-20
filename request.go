@@ -299,8 +299,7 @@ func WithUserAgent(ua string) Option {
 	}
 }
 
-// WithBody sets a raw request body with the provided content type.
-func WithBody(contentType string, body io.Reader) Option {
+func withBody(contentType string, body io.Reader) Option {
 	return func(cfg *callConfig) error {
 		if err := setBodyType(cfg, bodyTypeRaw); err != nil {
 			return err
@@ -318,13 +317,13 @@ func WithJSON(v any) Option {
 		if err != nil {
 			return fmt.Errorf("failed to marshal json body: %w", err)
 		}
-		return WithBody("application/json", bytes.NewReader(body))(cfg)
+		return withBody("application/json", bytes.NewReader(body))(cfg)
 	}
 }
 
 // WithXML sets the request body to raw XML data.
 func WithXML(data string) Option {
-	return WithBody("application/xml", strings.NewReader(data))
+	return withBody("application/xml", strings.NewReader(data))
 }
 
 // AddHeader adds a request header.
@@ -406,44 +405,4 @@ func AddMultipartFile(fieldname, filename string, content io.Reader) Option {
 // AddFileData adds a multipart file from an in-memory byte slice.
 func AddFileData(fieldname, filename string, data []byte) Option {
 	return AddMultipartFile(fieldname, filename, bytes.NewReader(data))
-}
-
-// SetUserAgent is kept for compatibility with older call sites.
-func SetUserAgent(ua string) Option {
-	return WithUserAgent(ua)
-}
-
-// SetBody is kept for compatibility with older call sites.
-func SetBody(contentType string, body io.Reader) Option {
-	return WithBody(contentType, body)
-}
-
-// SetJSONBody is kept for compatibility with older call sites.
-func SetJSONBody(data string) Option {
-	return WithBody("application/json", strings.NewReader(data))
-}
-
-// SetXMLBody is kept for compatibility with older call sites.
-func SetXMLBody(data string) Option {
-	return WithXML(data)
-}
-
-// AddData is kept for compatibility with older call sites.
-func AddData(key, value string) Option {
-	return AddFormValue(key, value)
-}
-
-// AddField is kept for compatibility with older call sites.
-func AddField(key, value string) Option {
-	return AddMultipartField(key, value)
-}
-
-// AddFile is kept for compatibility with older call sites.
-func AddFile(fieldname, filename string, content io.Reader) Option {
-	return AddMultipartFile(fieldname, filename, content)
-}
-
-// AddUrlArg is kept for compatibility with older call sites.
-func AddUrlArg(key, value string) Option {
-	return AddQuery(key, value)
 }
