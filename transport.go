@@ -2,6 +2,7 @@ package fetch
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -20,7 +21,7 @@ var maxOverrideTransportCacheEntries int64 = 64
 
 type transportCacheKey struct {
 	proxySet     bool
-	proxyURL     string
+	proxyURLSum  [32]byte
 	localAddrSet bool
 	localAddr    string
 }
@@ -70,7 +71,7 @@ func newTransportCacheKey(cfg *callConfig) transportCacheKey {
 		localAddr:    cfg.localAddr,
 	}
 	if cfg.proxyURL != nil {
-		key.proxyURL = cfg.proxyURL.String()
+		key.proxyURLSum = sha256.Sum256([]byte(cfg.proxyURL.String()))
 	}
 	return key
 }

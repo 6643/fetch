@@ -56,9 +56,17 @@ func readResponseBody(body io.Reader, limit int64) ([]byte, error) {
 		return nil, err
 	}
 	if int64(len(bodyBytes)) > limit {
+		if err := discardResponseBody(body); err != nil {
+			return nil, fmt.Errorf("response body exceeds limit of %d bytes and failed to discard the remainder: %w", limit, err)
+		}
 		return nil, fmt.Errorf("response body exceeds limit of %d bytes", limit)
 	}
 	return bodyBytes, nil
+}
+
+func discardResponseBody(body io.Reader) error {
+	_, err := io.Copy(io.Discard, body)
+	return err
 }
 
 // Get sends a GET request.

@@ -6,12 +6,16 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -484,6 +488,42 @@ func TestRequestRejectsBodyForLowercaseGet(t *testing.T) {
 	}
 }
 
+func TestRequestRejectsBodyForEmptyMethod(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	_, err := Request("", srv.URL, WithBody("text/plain", strings.NewReader("x")))
+	if err == nil {
+		t.Fatal("expected body validation error")
+	}
+	if hits != 0 {
+		t.Fatalf("expected request to fail before sending, got %d hits", hits)
+	}
+}
+
+func TestRequestNormalizesLowercaseMethodBeforeSending(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, r.Method, http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	res, err := Request("get", srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected status code 204, got %d with body %q", res.StatusCode, res.Text())
+	}
+}
+
 func TestRequestRejectsBodyForMixedCaseHead(t *testing.T) {
 	_, err := Request("HeAd", "http://example.com", WithBody("text/plain", strings.NewReader("x")))
 	if err == nil {
@@ -590,6 +630,45 @@ func TestDefaultResponseBodyLimit(t *testing.T) {
 	_, err := Get(srv.URL)
 	if err == nil {
 		t.Fatal("expected response body limit error")
+	}
+}
+
+func TestResponseBodyLimitDrainsBodyForConnectionReuse(t *testing.T) {
+	defaultTransport.CloseIdleConnections()
+	defer defaultTransport.CloseIdleConnections()
+
+	var (
+		mu       sync.Mutex
+		connSeen = make(map[net.Conn]struct{})
+	)
+	body := strings.Repeat("a", 32)
+
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		_, _ = io.WriteString(w, body)
+	}))
+	srv.Config.ConnState = func(conn net.Conn, state http.ConnState) {
+		if state != http.StateNew {
+			return
+		}
+		mu.Lock()
+		connSeen[conn] = struct{}{}
+		mu.Unlock()
+	}
+	srv.Start()
+	defer srv.Close()
+
+	for i := 0; i < 2; i++ {
+		_, err := Get(srv.URL, WithResponseBodyLimit(8))
+		if err == nil {
+			t.Fatal("expected response body limit error")
+		}
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(connSeen) != 1 {
+		t.Fatalf("expected a single reused connection, got %d", len(connSeen))
 	}
 }
 
@@ -827,6 +906,18 @@ func TestWithTLSConfigUsesUpdatedConfigOnRepeatedCalls(t *testing.T) {
 	_, err = Get(srv.URL, WithTLSConfig(tlsConfig), WithTimeout(200*time.Millisecond))
 	if err == nil {
 		t.Fatal("expected tls verification error after config mutation")
+	}
+}
+
+func TestTransportCacheKeyDoesNotExposeProxyCredentials(t *testing.T) {
+	cfg, err := newCallConfig(WithProxy("http://user:pass@example.com:8080"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	key := newTransportCacheKey(cfg)
+	if got := fmt.Sprintf("%v", key); strings.Contains(got, "user:pass") {
+		t.Fatalf("expected proxy credentials to stay out of transport cache key, got %q", got)
 	}
 }
 

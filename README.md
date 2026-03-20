@@ -9,11 +9,15 @@
 - 默认总超时为 `5s`。
 - 默认响应体大小上限为 `10 MiB`。
 - `Get`、`Post`、`Do` 等方法直接接收当次请求的全部参数。
+- 标准 HTTP 方法会按规范大写发送；空方法会按 `GET` 处理。
+- `GET`、`HEAD` 请求不允许携带请求体，包括通过 `Do`、`Request` 传入时也是如此。
 - 默认复用内部 `Transport` 以获得更好的连接复用性能。
 - 当使用 `WithProxy`、`WithLocalAddr`、`WithTLSConfig` 时，会按连接参数选择内部 `Transport`。
 - 相同的 `WithProxy`、`WithLocalAddr` 参数会复用内部 `Transport`, 以保留 keep-alive 连接复用收益。
 - `WithTLSConfig` 为避免复用过期 TLS 配置, 仍会为该次请求使用独立的 `Transport`。
+- 当响应体超出 `WithResponseBodyLimit` 时, 会返回错误并继续丢弃剩余数据, 以尽量保留连接复用能力。
 - override `Transport` 缓存使用固定上限; 达到上限后, 新的 override 组合会退回当次临时 `Transport`, 以避免缓存持续增长。
+- proxy override `Transport` 的缓存键不会保留明文代理凭据。
 
 ## 安装
 
@@ -62,6 +66,11 @@ fetch.Patch(url, opts...)
 fetch.Head(url, opts...)
 ```
 
+说明:
+
+- `fetch.Do("", url, opts...)` 和 `fetch.Request("", url, opts...)` 会按 `GET` 发送。
+- 标准方法名会被规范化为大写后再发出；非标准扩展方法保持原样。
+
 ## 可用参数
 
 ### 通用参数
@@ -79,6 +88,7 @@ fetch.WithUserAgent("my-agent/1.0")
 - `fetch.WithTimeout(0)` 会禁用默认超时。
 - 默认响应体大小上限为 `10 MiB`。
 - `fetch.WithResponseBodyLimit(0)` 会禁用响应体大小限制。
+- 超限时会返回错误，并在关闭响应前继续读取并丢弃剩余 body，以尽量复用底层连接。
 
 ### 请求头、Cookie、Query
 
@@ -214,3 +224,38 @@ res.JSON(&dst)
 - `AddField`
 - `AddFile`
 - `AddUrlArg`
+
+## 实现说明
+
+### Request 构建流程
+
+- 请求构建按 `normalizeMethod -> validateMethod -> finalizeURL -> validateConfiguredContentTypeConflict -> prepareBody -> applyMetadata` 顺序执行。
+- 请求方法与 body 冲突会在真正发包前失败，不会把非法请求发送到服务端。
+- multipart body 通过 `io.Pipe` 流式写入，避免先把整份 multipart 数据落到内存。
+
+### Response 构建流程
+
+- 响应会先保留原始 `Headers`，再生成兼容用的打平 `Header`。
+- `Location`、Cookie 兼容视图和完整 `CookiesList` 会分别提取，避免相互混淆。
+- 响应体会完整读入 `Response.Body`，并受 `WithResponseBodyLimit` 控制。
+
+### Transport 策略
+
+- 默认请求复用共享 `defaultTransport`。
+- `WithProxy`、`WithLocalAddr` 组合会命中内部 override `Transport` 缓存。
+- `WithTLSConfig` 会为每次请求创建独立 `Transport`，避免复用过期 TLS 配置。
+- override 缓存键会对代理 URL 做摘要，不直接保存明文凭据。
+
+### 代码维护约束
+
+- 主干逻辑优先使用守卫式写法。
+- 核心逻辑嵌套深度控制在 2 层以内。
+- 复杂流程拆分为单一职责的私有函数，便于审查和测试。
+
+## 开发验证
+
+```bash
+go test ./...
+go test -race ./...
+go vet ./...
+```

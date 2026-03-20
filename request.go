@@ -42,6 +42,8 @@ func setBodyType(cfg *callConfig, newType bodyType) error {
 }
 
 func buildRequest(method, rawURL string, cfg *callConfig) (*http.Request, error) {
+	method = normalizeMethod(method)
+
 	if err := validateMethod(method, cfg.bodySetType); err != nil {
 		return nil, err
 	}
@@ -67,6 +69,28 @@ func buildRequest(method, rawURL string, cfg *callConfig) (*http.Request, error)
 
 	applyMetadata(req, cfg, contentType)
 	return req, nil
+}
+
+func normalizeMethod(method string) string {
+	if method == "" {
+		return http.MethodGet
+	}
+
+	upperMethod := strings.ToUpper(method)
+	switch upperMethod {
+	case http.MethodGet,
+		http.MethodHead,
+		http.MethodPost,
+		http.MethodPut,
+		http.MethodPatch,
+		http.MethodDelete,
+		http.MethodOptions,
+		http.MethodTrace,
+		http.MethodConnect:
+		return upperMethod
+	default:
+		return method
+	}
 }
 
 func validateMethod(method string, bType bodyType) error {
