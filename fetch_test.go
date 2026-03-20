@@ -7,12 +7,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -157,27 +163,6 @@ func TestWithJSONRejectsExplicitContentTypeHeader(t *testing.T) {
 		srv.URL,
 		AddHeader("Content-Type", "application/problem+json"),
 		WithJSON(map[string]string{"key": "value"}),
-	)
-	if !errors.Is(err, ErrContentTypeConflict) {
-		t.Fatalf("expected ErrContentTypeConflict, got %v", err)
-	}
-	if hits != 0 {
-		t.Fatalf("expected request to fail before sending, got %d hits", hits)
-	}
-}
-
-func TestSetJSONBodyRejectsExplicitContentTypeHeader(t *testing.T) {
-	hits := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hits++
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
-
-	_, err := Post(
-		srv.URL,
-		AddHeader("Content-Type", "application/problem+json"),
-		SetJSONBody(`{"key":"value"}`),
 	)
 	if !errors.Is(err, ErrContentTypeConflict) {
 		t.Fatalf("expected ErrContentTypeConflict, got %v", err)
@@ -414,44 +399,6 @@ func TestMultipartRejectsExplicitContentTypeHeader(t *testing.T) {
 	}
 }
 
-func TestWithBodyWithoutContentTypeAllowsExplicitHeader(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("Content-Type"); got != "application/custom" {
-			t.Fatalf("unexpected content type: %s", got)
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
-
-	_, err := Post(
-		srv.URL,
-		AddHeader("Content-Type", "application/custom"),
-		WithBody("", strings.NewReader("payload")),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestWithBodyWithoutContentTypeAllowsExplicitHeaderRegardlessOfOptionOrder(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("Content-Type"); got != "application/custom" {
-			t.Fatalf("unexpected content type: %s", got)
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
-
-	_, err := Post(
-		srv.URL,
-		WithBody("", strings.NewReader("payload")),
-		AddHeader("Content-Type", "application/custom"),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestAddMultipartFileRejectsNilContent(t *testing.T) {
 	_, err := Post("http://example.com", AddMultipartFile("file", "a.txt", nil))
 	if err == nil {
@@ -481,14 +428,14 @@ func TestWriteMultipartFilesClosesRemainingReadersOnFailure(t *testing.T) {
 	}
 }
 
-func TestRequestRejectsBodyForLowercaseGet(t *testing.T) {
-	_, err := Request("get", "http://example.com", WithJSON(map[string]string{"a": "b"}))
+func TestDoRejectsBodyForLowercaseGet(t *testing.T) {
+	_, err := Do("get", "http://example.com", WithJSON(map[string]string{"a": "b"}))
 	if err == nil {
 		t.Fatal("expected body validation error")
 	}
 }
 
-func TestRequestRejectsBodyForEmptyMethod(t *testing.T) {
+func TestDoRejectsBodyForEmptyMethod(t *testing.T) {
 	hits := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits++
@@ -496,7 +443,7 @@ func TestRequestRejectsBodyForEmptyMethod(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := Request("", srv.URL, WithBody("text/plain", strings.NewReader("x")))
+	_, err := Do("", srv.URL, WithXML("<x />"))
 	if err == nil {
 		t.Fatal("expected body validation error")
 	}
@@ -505,7 +452,7 @@ func TestRequestRejectsBodyForEmptyMethod(t *testing.T) {
 	}
 }
 
-func TestRequestNormalizesLowercaseMethodBeforeSending(t *testing.T) {
+func TestDoNormalizesLowercaseMethodBeforeSending(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, r.Method, http.StatusBadRequest)
@@ -515,7 +462,7 @@ func TestRequestNormalizesLowercaseMethodBeforeSending(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	res, err := Request("get", srv.URL)
+	res, err := Do("get", srv.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -524,8 +471,8 @@ func TestRequestNormalizesLowercaseMethodBeforeSending(t *testing.T) {
 	}
 }
 
-func TestRequestRejectsBodyForMixedCaseHead(t *testing.T) {
-	_, err := Request("HeAd", "http://example.com", WithBody("text/plain", strings.NewReader("x")))
+func TestDoRejectsBodyForMixedCaseHead(t *testing.T) {
+	_, err := Do("HeAd", "http://example.com", WithXML("<x />"))
 	if err == nil {
 		t.Fatal("expected body validation error")
 	}
@@ -1012,7 +959,96 @@ func TestWithContext(t *testing.T) {
 	}
 }
 
-func TestSetJSONBodyCompatibility(t *testing.T) {
+func TestLegacyExportedAliasesRemoved(t *testing.T) {
+	legacyNames := map[string]struct{}{
+		"Request":       {},
+		"RequestOption": {},
+		"WithBody":      {},
+		"SetUserAgent":  {},
+		"SetBody":       {},
+		"SetJSONBody":   {},
+		"SetXMLBody":    {},
+		"AddData":       {},
+		"AddField":      {},
+		"AddFile":       {},
+		"AddUrlArg":     {},
+	}
+
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatalf("failed to enumerate go files: %v", err)
+	}
+
+	fset := token.NewFileSet()
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+
+		parsed, err := parser.ParseFile(fset, file, nil, parser.SkipObjectResolution)
+		if err != nil {
+			t.Fatalf("failed to parse %s: %v", file, err)
+		}
+
+		for _, decl := range parsed.Decls {
+			switch node := decl.(type) {
+			case *ast.FuncDecl:
+				if node.Recv != nil || node.Name == nil {
+					continue
+				}
+				if _, ok := legacyNames[node.Name.Name]; ok {
+					t.Fatalf("legacy exported alias still defined: %s in %s", node.Name.Name, file)
+				}
+			case *ast.GenDecl:
+				for _, spec := range node.Specs {
+					switch typedSpec := spec.(type) {
+					case *ast.TypeSpec:
+						if _, ok := legacyNames[typedSpec.Name.Name]; ok {
+							t.Fatalf("legacy exported alias still defined: %s in %s", typedSpec.Name.Name, file)
+						}
+					case *ast.ValueSpec:
+						for _, name := range typedSpec.Names {
+							if _, ok := legacyNames[name.Name]; ok {
+								t.Fatalf("legacy exported alias still defined: %s in %s", name.Name, file)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestREADMEOmitsLegacyAPIReferences(t *testing.T) {
+	content, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatalf("failed to read README.md: %v", err)
+	}
+
+	legacyPatterns := map[string]string{
+		"Request":       "fetch\\.Request\\(|\\bRequest\\(|`Request`",
+		"RequestOption": "fetch\\.RequestOption\\(|`RequestOption`|\\bRequestOption\\b",
+		"WithBody":      "fetch\\.WithBody\\(|`WithBody`|\\bWithBody\\(",
+		"SetUserAgent":  "fetch\\.SetUserAgent\\(|`SetUserAgent`|\\bSetUserAgent\\b",
+		"SetBody":       "fetch\\.SetBody\\(|`SetBody`|\\bSetBody\\b",
+		"SetJSONBody":   "fetch\\.SetJSONBody\\(|`SetJSONBody`|\\bSetJSONBody\\b",
+		"SetXMLBody":    "fetch\\.SetXMLBody\\(|`SetXMLBody`|\\bSetXMLBody\\b",
+		"AddData":       "fetch\\.AddData\\(|`AddData`|\\bAddData\\b",
+		"AddField":      "fetch\\.AddField\\(|`AddField`|\\bAddField\\b",
+		"AddFile":       "fetch\\.AddFile\\(|`AddFile`|\\bAddFile\\b",
+		"AddUrlArg":     "fetch\\.AddUrlArg\\(|`AddUrlArg`|\\bAddUrlArg\\b",
+	}
+
+	readme := string(content)
+	for name, pattern := range legacyPatterns {
+		re := regexp.MustCompile(pattern)
+		if re.FindString(readme) != "" {
+			t.Fatalf("README still references legacy API %q", name)
+		}
+	}
+}
+
+func TestWithJSONSendsMarshaledPayload(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Content-Type"); got != "application/json" {
 			t.Errorf("unexpected content type: %s", got)
@@ -1025,7 +1061,7 @@ func TestSetJSONBodyCompatibility(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	res, err := Post(srv.URL, SetJSONBody(`{"legacy":true}`))
+	res, err := Post(srv.URL, WithJSON(map[string]bool{"legacy": true}))
 	if err != nil {
 		t.Fatal(err)
 	}
