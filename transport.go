@@ -24,6 +24,7 @@ type transportCacheKey struct {
 	proxyURLSum  [32]byte
 	localAddrSet bool
 	localAddr    string
+	fingerprint  string
 }
 
 func newDefaultTransport() *http.Transport {
@@ -35,10 +36,25 @@ func newDefaultTransport() *http.Transport {
 	return transport
 }
 
-func transportFor(cfg *callConfig) (*http.Transport, func(), error) {
+func transportFor(cfg *callConfig) (http.RoundTripper, func(), error) {
+	// VLESS: replace transport entirely with a VLESS round tripper
+	if cfg.vlessURI != "" {
+		rt, err := newVlessRoundTripper(cfg.vlessURI)
+		if err != nil {
+			return nil, nil, err
+		}
+		if t, ok := rt.(*http.Transport); ok {
+			return rt, t.CloseIdleConnections, nil
+		}
+		return rt, nil, nil
+	}
+
 	if !cfg.hasTransportOverrides() {
 		return defaultTransport, nil, nil
 	}
+
+	// Custom TLS config is request-scoped. Do not cache transports that embed it,
+	// because roots, SNI, callbacks, and other security semantics may differ.
 	if cfg.tlsConfig != nil {
 		transport := defaultTransport.Clone()
 		if err := applyTransportOptions(transport, cfg); err != nil {
@@ -69,6 +85,7 @@ func newTransportCacheKey(cfg *callConfig) transportCacheKey {
 		proxySet:     cfg.proxySet,
 		localAddrSet: cfg.localAddrSet,
 		localAddr:    cfg.localAddr,
+		fingerprint:  cfg.fingerprint,
 	}
 	if cfg.proxyURL != nil {
 		key.proxyURLSum = sha256.Sum256([]byte(cfg.proxyURL.String()))
@@ -116,6 +133,25 @@ func applyTransportOptions(transport *http.Transport, cfg *callConfig) error {
 	}
 
 	applyTLSConfig(transport, cfg)
+
+	if err := applyFingerprint(transport, cfg); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func applyFingerprint(transport *http.Transport, cfg *callConfig) error {
+	if cfg.fingerprint == "" {
+		return nil
+	}
+
+	dialTLS, err := newUTLSDialContext(cfg.fingerprint, cfg.tlsConfig, cfg.localAddr)
+	if err != nil {
+		return err
+	}
+
+	transport.DialTLSContext = dialTLS
 	return nil
 }
 
@@ -218,6 +254,24 @@ func WithTLSConfig(tlsConfig *tls.Config) Option {
 		}
 
 		cfg.tlsConfig = tlsConfig.Clone()
+		return nil
+	}
+}
+
+// WithFingerprint sets the TLS client hello fingerprint for browser mimicry.
+// Supported values: "chrome", "firefox", "safari", "edge", "ios", "android",
+// "random", "randomized", "golang", "custom".
+// An empty string clears the fingerprint override.
+func WithFingerprint(name string) Option {
+	return func(cfg *callConfig) error {
+		if name == "" {
+			cfg.fingerprint = ""
+			return nil
+		}
+		if _, err := resolveFingerprint(name); err != nil {
+			return err
+		}
+		cfg.fingerprint = name
 		return nil
 	}
 }

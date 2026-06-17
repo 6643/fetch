@@ -38,6 +38,8 @@ type callConfig struct {
 	localAddr    string
 	localAddrSet bool
 	tlsConfig    *tls.Config
+	fingerprint  string
+	vlessURI     string
 }
 
 func newCallConfig(opts ...Option) (*callConfig, error) {
@@ -54,6 +56,9 @@ func newCallConfig(opts ...Option) (*callConfig, error) {
 			return nil, err
 		}
 	}
+	if err := cfg.validateTransportOptions(); err != nil {
+		return nil, err
+	}
 
 	return cfg, nil
 }
@@ -66,7 +71,17 @@ func (cfg *callConfig) contextWithTimeout() (context.Context, context.CancelFunc
 }
 
 func (cfg *callConfig) hasTransportOverrides() bool {
-	return cfg.proxySet || cfg.localAddrSet || cfg.tlsConfig != nil
+	return cfg.proxySet || cfg.localAddrSet || cfg.tlsConfig != nil || cfg.fingerprint != "" || cfg.vlessURI != ""
+}
+
+func (cfg *callConfig) validateTransportOptions() error {
+	if cfg.vlessURI == "" {
+		return nil
+	}
+	if cfg.proxySet || cfg.localAddrSet || cfg.tlsConfig != nil || cfg.fingerprint != "" {
+		return fmt.Errorf("WithVless cannot be combined with other transport options")
+	}
+	return nil
 }
 
 // WithResponseBodyLimit sets the maximum number of bytes read from the response body.

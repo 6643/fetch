@@ -12,8 +12,8 @@
 - 标准 HTTP 方法会按规范大写发送；空方法会按 `GET` 处理。
 - `GET`、`HEAD` 请求不允许携带请求体，包括通过 `Do` 传入时也是如此。
 - 默认复用内部 `Transport` 以获得更好的连接复用性能。
-- 当使用 `WithProxy`、`WithLocalAddr`、`WithTLSConfig` 时，会按连接参数选择内部 `Transport`。
-- 相同的 `WithProxy`、`WithLocalAddr` 参数会复用内部 `Transport`, 以保留 keep-alive 连接复用收益。
+- 当使用 `WithProxy`、`WithLocalAddr`、`WithTLSConfig`、`WithFingerprint` 时，会按连接参数选择内部 `Transport`。
+- 相同的 `WithProxy`、`WithLocalAddr`、`WithFingerprint` 参数会复用内部 `Transport`, 以保留 keep-alive 连接复用收益。
 - `WithTLSConfig` 为避免复用过期 TLS 配置, 仍会为该次请求使用独立的 `Transport`。
 - 当响应体超出 `WithResponseBodyLimit` 时, 会返回错误并继续丢弃剩余数据, 以尽量保留连接复用能力。
 - override `Transport` 缓存使用固定上限; 达到上限后, 新的 override 组合会退回当次临时 `Transport`, 以避免缓存持续增长。
@@ -125,6 +125,8 @@ fetch.AddFileData("file", "a.txt", []byte("hello"))
 fetch.WithProxy("http://127.0.0.1:8080")
 fetch.WithLocalAddr("192.168.1.10")
 fetch.WithTLSConfig(tlsConfig)
+fetch.WithFingerprint("chrome")
+fetch.WithVless("vless://uuid@host:443?security=tls&type=ws&path=%2Fws")
 ```
 
 说明:
@@ -173,6 +175,46 @@ if err != nil {
 	panic(err)
 }
 ```
+
+## TLS 指纹示例
+
+使用 `WithFingerprint` 模拟浏览器 TLS ClientHello 指纹:
+
+```go
+res, err := fetch.Get(
+	"https://example.com",
+	fetch.WithFingerprint("chrome"),
+)
+if err != nil {
+	panic(err)
+}
+```
+
+支持的值: `"chrome"`, `"firefox"`, `"safari"`, `"edge"`, `"ios"`, `"android"`, `"random"`, `"randomized"`, `"golang"`, `"custom"`。
+
+可与 `WithTLSConfig` 组合使用, 此时 `WithFingerprint` 控制 ClientHello 指纹形态, `WithTLSConfig` 提供根证书等参数。
+
+## VLESS 示例
+
+使用 `WithVless` 通过 VLESS WebSocket 隧道发送请求:
+
+```go
+res, err := fetch.Get(
+	"https://example.com",
+	fetch.WithVless("vless://uuid@server:443?security=tls&type=ws&path=%2Fws&fp=chrome"),
+)
+if err != nil {
+	panic(err)
+}
+```
+
+说明:
+
+- URI 必须是 `security=tls&type=ws` 的 VLESS 分享链接
+- 使用 `WithVless` 时, 不要与 `WithProxy`、`WithLocalAddr`、`WithTLSConfig`、`WithFingerprint` 等传输层选项混用; 当前实现会返回错误, 且请求不会被发送
+- 非传输层选项 (`WithTimeout`、`AddHeader`、`WithJSON` 等) 仍正常工作
+- 传输配置 (`sni`/`host`/`path`/`fp`/`ech`) 在 VLESS URI 的参数中设置
+- `ech` 支持 `<public-name>+<https-doh-endpoint>` 形式, 会按需通过 DoH 解析并按 TTL 缓存 ECH ConfigList
 
 ## 响应
 
@@ -227,7 +269,7 @@ res.JSON(&dst)
 
 - 默认请求复用共享 `defaultTransport`。
 - `WithProxy`、`WithLocalAddr` 组合会命中内部 override `Transport` 缓存。
-- `WithTLSConfig` 会为每次请求创建独立 `Transport`，避免复用过期 TLS 配置。
+- `WithTLSConfig` 会为每次请求创建独立 `Transport`，避免复用过期 TLS 配置; 与 `WithFingerprint` 组合时同样不会进入缓存。
 - override 缓存键会对代理 URL 做摘要，不直接保存明文凭据。
 
 ### 代码维护约束
