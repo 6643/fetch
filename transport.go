@@ -11,6 +11,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	utls "github.com/refraction-networking/utls"
+	"golang.org/x/net/http2"
 )
 
 var (
@@ -40,7 +43,6 @@ func newDefaultTransport() *http.Transport {
 }
 
 func transportFor(cfg *callConfig) (http.RoundTripper, func(), error) {
-	// VLESS: replace transport entirely with a VLESS round tripper
 	if cfg.proxyURI != "" {
 		rt, err := newVlessRoundTripper(cfg.proxyURI)
 		if err != nil {
@@ -56,12 +58,20 @@ func transportFor(cfg *callConfig) (http.RoundTripper, func(), error) {
 		return defaultTransport, nil, nil
 	}
 
-	// Custom TLS config is request-scoped. Do not cache transports that embed it,
-	// because roots, SNI, callbacks, and other security semantics may differ.
+	// TLS 指纹: 使用自定义 Transport
+	if cfg.fingerprint != "" {
+		rt, err := newFingerprintTransport(cfg)
+		if err != nil {
+			return nil, nil, err
+		}
+		return rt, func() {}, nil
+	}
+
 	if cfg.tlsConfig != nil {
 		transport := defaultTransport.Clone()
-		if err := applyTransportOptions(transport, cfg); err != nil {
-			return nil, nil, err
+		transport.TLSClientConfig = cfg.tlsConfig.Clone()
+		if cfg.proxySet && cfg.proxyURL != nil {
+			transport.Proxy = http.ProxyURL(cfg.proxyURL)
 		}
 		return transport, transport.CloseIdleConnections, nil
 	}
@@ -82,6 +92,92 @@ func transportFor(cfg *callConfig) (http.RoundTripper, func(), error) {
 	}
 	return cachedTransport, nil, nil
 }
+
+// ─── TLS 指纹 + HTTP/2 自定义 Transport ───────────
+
+type fingerprintTransport struct {
+	h2Transport *http2.Transport
+	dialer      *net.Dialer
+	fingerprint string
+	tlsConfig   *tls.Config
+	localAddr   string
+}
+
+func newFingerprintTransport(cfg *callConfig) (*fingerprintTransport, error) {
+	dialer := &net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	if cfg.localAddr != "" {
+		ip := net.ParseIP(cfg.localAddr)
+		if ip != nil {
+			dialer.LocalAddr = &net.TCPAddr{IP: ip}
+		}
+	}
+
+	t := &fingerprintTransport{
+		dialer:      dialer,
+		fingerprint: cfg.fingerprint,
+		tlsConfig:   cfg.tlsConfig,
+		localAddr:   cfg.localAddr,
+	}
+
+	// 创建 http2.Transport，使用自定义 DialTLS
+	h2Transport := &http2.Transport{
+		DialTLS: func(network, addr string, _ *tls.Config) (net.Conn, error) {
+			return t.dialWithFingerprint(network, addr)
+		},
+		AllowHTTP: true,
+		ReadIdleTimeout: 30 * time.Second,
+		PingTimeout:     10 * time.Second,
+	}
+	t.h2Transport = h2Transport
+
+	return t, nil
+}
+
+func (t *fingerprintTransport) dialWithFingerprint(network, addr string) (net.Conn, error) {
+	helloID, err := resolveFingerprint(t.fingerprint)
+	if err != nil {
+		return nil, err
+	}
+
+	tcpConn, err := t.dialer.DialContext(context.Background(), network, addr)
+	if err != nil {
+		return nil, err
+	}
+
+	host, _, _ := net.SplitHostPort(addr)
+	tlsCfg := t.tlsConfig
+	if tlsCfg == nil {
+		tlsCfg = &tls.Config{}
+	}
+	cloned := tlsCfg.Clone()
+	if cloned.ServerName == "" {
+		cloned.ServerName = host
+	}
+
+	uConfig := toUTLSConfig(cloned)
+	uConfig.NextProtos = []string{"h2", "http/1.1"}
+
+	tlsConn := utls.UClient(tcpConn, uConfig, helloID)
+	if err := tlsConn.HandshakeContext(context.Background()); err != nil {
+		tcpConn.Close()
+		return nil, err
+	}
+
+	return tlsConn, nil
+}
+
+func (t *fingerprintTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return t.h2Transport.RoundTrip(req)
+}
+
+func (t *fingerprintTransport) CloseIdleConnections() {
+	t.h2Transport.CloseIdleConnections()
+}
+
+// ─── 缓存和辅助函数 ───────────────────────────────
 
 func newTransportCacheKey(cfg *callConfig) transportCacheKey {
 	key := transportCacheKey{
@@ -121,14 +217,6 @@ func storeCachedTransport(key transportCacheKey, transport *http.Transport) (*ht
 	return transport, true
 }
 
-func resetOverrideTransportCache() {
-	overrideTransportCacheMu.Lock()
-	defer overrideTransportCacheMu.Unlock()
-
-	overrideTransportCache = sync.Map{}
-	overrideTransportCacheCount = 0
-}
-
 func applyTransportOptions(transport *http.Transport, cfg *callConfig) error {
 	applyProxy(transport, cfg)
 
@@ -138,24 +226,6 @@ func applyTransportOptions(transport *http.Transport, cfg *callConfig) error {
 
 	applyTLSConfig(transport, cfg)
 
-	if err := applyFingerprint(transport, cfg); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func applyFingerprint(transport *http.Transport, cfg *callConfig) error {
-	if cfg.fingerprint == "" {
-		return nil
-	}
-
-	dialTLS, err := newUTLSDialContext(cfg.fingerprint, cfg.tlsConfig, cfg.localAddr)
-	if err != nil {
-		return err
-	}
-
-	transport.DialTLSContext = dialTLS
 	return nil
 }
 
@@ -163,12 +233,10 @@ func applyProxy(transport *http.Transport, cfg *callConfig) {
 	if !cfg.proxySet {
 		return
 	}
-
 	if cfg.proxyURL == nil {
 		transport.Proxy = nil
 		return
 	}
-
 	transport.Proxy = http.ProxyURL(cfg.proxyURL)
 }
 
@@ -176,12 +244,10 @@ func applyLocalAddr(transport *http.Transport, cfg *callConfig) error {
 	if !cfg.localAddrSet {
 		return nil
 	}
-
 	dialContext, err := newDialContext(cfg.localAddr)
 	if err != nil {
 		return err
 	}
-
 	transport.DialContext = dialContext
 	return nil
 }
@@ -197,7 +263,6 @@ func newDialContext(localAddr string) (func(ctx context.Context, network, addres
 	if err != nil {
 		return nil, err
 	}
-
 	return dialer.DialContext, nil
 }
 
@@ -206,7 +271,6 @@ func newLocalDialer(localAddr string) (*net.Dialer, error) {
 	if ip == nil {
 		return nil, fmt.Errorf("invalid local address %q", localAddr)
 	}
-
 	return &net.Dialer{
 		Timeout:   30 * time.Second,
 		KeepAlive: 30 * time.Second,
@@ -214,13 +278,6 @@ func newLocalDialer(localAddr string) (*net.Dialer, error) {
 	}, nil
 }
 
-// WithProxy routes the current request through the provided proxy.
-// The proxy type is determined by the URL scheme:
-//   - vless:// — VLESS tunnel (replaces transport entirely)
-//   - http://, https:// — HTTP CONNECT proxy
-//   - socks5://, socks5h:// — SOCKS5 proxy
-//
-// Passing an empty string disables proxying for the current request.
 func WithProxy(rawURL string) Option {
 	return func(cfg *callConfig) error {
 		if rawURL == "" {
@@ -229,7 +286,6 @@ func WithProxy(rawURL string) Option {
 			cfg.proxyURI = ""
 			return nil
 		}
-
 		switch {
 		case strings.HasPrefix(rawURL, "vless://"):
 			return setupVless(cfg, rawURL)
@@ -240,7 +296,7 @@ func WithProxy(rawURL string) Option {
 			return setupHTTPProxy(cfg, rawURL)
 		default:
 			return fmt.Errorf("unsupported proxy scheme in %q", rawURL)
-	}
+		}
 	}
 }
 
@@ -259,35 +315,27 @@ func setupHTTPProxy(cfg *callConfig, rawURL string) error {
 	return nil
 }
 
-// WithLocalAddr binds the request to a specific local IP.
 func WithLocalAddr(localAddr string) Option {
 	return func(cfg *callConfig) error {
 		if net.ParseIP(localAddr) == nil {
 			return fmt.Errorf("invalid local address %q", localAddr)
 		}
-
 		cfg.localAddrSet = true
 		cfg.localAddr = localAddr
 		return nil
 	}
 }
 
-// WithTLSConfig uses a custom TLS configuration for the current request.
 func WithTLSConfig(tlsConfig *tls.Config) Option {
 	return func(cfg *callConfig) error {
 		if tlsConfig == nil {
 			return fmt.Errorf("tls config cannot be nil")
 		}
-
 		cfg.tlsConfig = tlsConfig.Clone()
 		return nil
 	}
 }
 
-// WithFingerprint sets the TLS client hello fingerprint for browser mimicry.
-// Supported values: "chrome", "firefox", "safari", "edge", "ios", "android",
-// "random", "randomized", "golang", "custom".
-// An empty string clears the fingerprint override.
 func WithFingerprint(name string) Option {
 	return func(cfg *callConfig) error {
 		if name == "" {
