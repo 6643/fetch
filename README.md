@@ -27,6 +27,8 @@ go get github.com/6643/fetch
 
 ## 快速开始
 
+### 一次性请求
+
 ```go
 package main
 
@@ -54,7 +56,66 @@ func main() {
 }
 ```
 
-## 方法
+### 复用 Client
+
+```go
+package main
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/6643/fetch"
+)
+
+func main() {
+	client, err := fetch.NewClient(
+		fetch.WithFingerprint("chrome"),
+		fetch.WithTimeout(30*time.Second),
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer client.Close()
+
+	// 复用同一 transport，多次请求
+	res1, _ := client.Get("https://a.com", fetch.AddQuery("k", "1"))
+	res2, _ := client.Get("https://b.com", fetch.WithJSON(payload))
+
+	fmt.Println(res1.Text())
+	fmt.Println(res2.StatusCode)
+}
+```
+
+## Client
+
+`Client` 封装了一个可复用的 transport 和默认请求参数，适合高频请求场景：
+
+```go
+client, err := fetch.NewClient(
+	// 传输层选项：锁定 transport 配置，不可按请求覆盖
+	fetch.WithProxy("http://127.0.0.1:8080"),
+	fetch.WithFingerprint("chrome"),
+	fetch.WithVless("vless://uuid@host:443?security=tls&type=ws&path=%2Fws"),
+
+	// 默认请求参数：可按请求覆盖
+	fetch.WithTimeout(30*time.Second),
+	fetch.WithResponseBodyLimit(10 << 20),
+	fetch.WithUserAgent("my-agent/1.0"),
+)
+if err != nil {
+	panic(err)
+}
+defer client.Close()
+```
+
+说明:
+
+- 传输层选项 (`WithProxy`、`WithLocalAddr`、`WithTLSConfig`、`WithFingerprint`、`WithVless`) 在 `NewClient` 时锁定，按请求传入会返回错误。
+- 非传输层选项 (`WithTimeout`、`WithResponseBodyLimit`、`WithUserAgent`) 设为 client 级默认值，按请求传入时会覆盖默认值。
+- `Close()` 释放底层 transport 资源（包括空闲连接），可安全多次调用。
+
+## 一次性请求
 
 ```go
 fetch.Do(method, url, opts...)
@@ -132,6 +193,7 @@ fetch.WithVless("vless://uuid@host:443?security=tls&type=ws&path=%2Fws")
 说明:
 
 - `fetch.WithProxy` 只接受带 `scheme` 和 `host` 的绝对 URL。
+- 使用 `Client` 时，这些选项必须在 `NewClient` 时传入，不可按请求覆盖。
 
 ## JSON 示例
 
@@ -181,13 +243,18 @@ if err != nil {
 使用 `WithFingerprint` 模拟浏览器 TLS ClientHello 指纹:
 
 ```go
+// 一次性请求
 res, err := fetch.Get(
 	"https://example.com",
 	fetch.WithFingerprint("chrome"),
 )
-if err != nil {
-	panic(err)
-}
+
+// 或通过 Client 复用
+client, _ := fetch.NewClient(
+	fetch.WithFingerprint("chrome"),
+)
+defer client.Close()
+res, err := client.Get("https://example.com")
 ```
 
 支持的值: `"chrome"`, `"firefox"`, `"safari"`, `"edge"`, `"ios"`, `"android"`, `"random"`, `"randomized"`, `"golang"`, `"custom"`。
@@ -199,22 +266,28 @@ if err != nil {
 使用 `WithVless` 通过 VLESS WebSocket 隧道发送请求:
 
 ```go
+// 一次性请求
 res, err := fetch.Get(
 	"https://example.com",
 	fetch.WithVless("vless://uuid@server:443?security=tls&type=ws&path=%2Fws&fp=chrome"),
 )
-if err != nil {
-	panic(err)
-}
+
+// 或通过 Client 复用（推荐）
+client, _ := fetch.NewClient(
+	fetch.WithVless("vless://uuid@server:443?security=tls&type=ws&path=%2Fws&fp=chrome"),
+)
+defer client.Close()
+res, err := client.Get("https://example.com")
 ```
 
 说明:
 
 - URI 必须是 `security=tls&type=ws` 的 VLESS 分享链接
 - 使用 `WithVless` 时, 不要与 `WithProxy`、`WithLocalAddr`、`WithTLSConfig`、`WithFingerprint` 等传输层选项混用; 当前实现会返回错误, 且请求不会被发送
-- 非传输层选项 (`WithTimeout`、`AddHeader`、`WithJSON` 等) 仍正常工作
+- 使用 `Client` 时, 传输层选项在 `NewClient` 时锁定; 非传输层选项 (`WithTimeout`、`AddHeader`、`WithJSON` 等) 仍正常工作
 - 传输配置 (`sni`/`host`/`path`/`fp`/`ech`) 在 VLESS URI 的参数中设置
 - `ech` 支持 `<public-name>+<https-doh-endpoint>` 形式, 会按需通过 DoH 解析并按 TTL 缓存 ECH ConfigList
+- 推荐通过 `Client` 使用 VLESS, 以复用底层 WebSocket 连接和 ECH 缓存
 
 ## 响应
 
@@ -223,10 +296,7 @@ type Response struct {
 	StatusCode  int
 	Status      string
 	Location    string
-	Cookie      map[string]string
-	Cookies     string
 	CookiesList []*http.Cookie
-	Header      map[string]string
 	Headers     http.Header
 	Body        []byte
 }
@@ -242,13 +312,8 @@ res.JSON(&dst)
 说明:
 
 - 当响应体为空时, `res.JSON(&dst)` 会返回 `fetch.ErrEmptyBody`。
-
-兼容字段说明:
-
-- `Response.Header` 是响应头的便捷打平视图, 多值头会被合并, 不适合作为完整 HTTP 语义来源。
-- `Response.Cookie` 是按名称索引的兼容视图; 同名 Cookie 会以后出现者覆盖先出现者。
-- `Response.Cookies` 是由解析后的响应 Cookie 生成的 `name=value` 摘要串, 不是原始 `Set-Cookie` 头, 也不适合作为无损回放格式。
-- 新代码需要完整响应头和 Cookie 语义时, 请优先使用 `Response.Headers` 和 `Response.CookiesList`。
+- `Response.Headers` 包含完整的原始响应头。
+- `Response.CookiesList` 包含完整的解析后 Cookie 列表。
 - 响应体会先完整读入 `Response.Body`; 默认单次读取上限为 `10 MiB`。
 
 ## 实现说明
@@ -261,8 +326,8 @@ res.JSON(&dst)
 
 ### Response 构建流程
 
-- 响应会先保留原始 `Headers`，再生成兼容用的打平 `Header`。
-- `Location`、Cookie 兼容视图和完整 `CookiesList` 会分别提取，避免相互混淆。
+- 响应保留原始 `Headers` (`http.Header`) 和 `CookiesList` (`[]*http.Cookie`)，提供完整的 HTTP 语义。
+- `Location` 会分别提取，便于处理重定向。
 - 响应体会完整读入 `Response.Body`，并受 `WithResponseBodyLimit` 控制。
 
 ### Transport 策略
@@ -271,6 +336,7 @@ res.JSON(&dst)
 - `WithProxy`、`WithLocalAddr` 组合会命中内部 override `Transport` 缓存。
 - `WithTLSConfig` 会为每次请求创建独立 `Transport`，避免复用过期 TLS 配置; 与 `WithFingerprint` 组合时同样不会进入缓存。
 - override 缓存键会对代理 URL 做摘要，不直接保存明文凭据。
+- `Client` 在创建时锁定 transport，所有请求复用同一连接池。
 
 ### 代码维护约束
 

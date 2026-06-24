@@ -109,9 +109,6 @@ func TestGetRequest(t *testing.T) {
 	if !reflect.DeepEqual(data.Header, []string{"1", "2"}) {
 		t.Fatalf("unexpected repeated header values: %#v", data.Header)
 	}
-	if res.Header["X-Server"] != "fetch-test" {
-		t.Fatalf("unexpected flattened header value: %s", res.Header["X-Server"])
-	}
 	if res.Headers.Get("X-Server") != "fetch-test" {
 		t.Fatalf("unexpected raw header value: %s", res.Headers.Get("X-Server"))
 	}
@@ -663,39 +660,12 @@ func TestResponseRedirectAndCookies(t *testing.T) {
 	if res.Location != srv.URL+"/target" {
 		t.Fatalf("unexpected location: %s", res.Location)
 	}
-	if res.Cookie["session"] != "abc" {
-		t.Fatalf("unexpected cookie map: %#v", res.Cookie)
-	}
-	if res.Cookies != "session=abc" {
-		t.Fatalf("unexpected cookies string: %s", res.Cookies)
-	}
-	if len(res.CookiesList) != 1 || res.CookiesList[0].Name != "session" {
+	if len(res.CookiesList) != 1 || res.CookiesList[0].Name != "session" || res.CookiesList[0].Value != "abc" {
 		t.Fatalf("unexpected cookies list: %#v", res.CookiesList)
 	}
 }
 
-func TestResponseHeaderCompatibilityViewIsLossy(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Add("Link", "<https://example.com/a>; rel=preload")
-		w.Header().Add("Link", "<https://example.com/b>; rel=next")
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
-
-	res, err := Get(srv.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if got := res.Headers.Values("Link"); !reflect.DeepEqual(got, []string{"<https://example.com/a>; rel=preload", "<https://example.com/b>; rel=next"}) {
-		t.Fatalf("unexpected raw link headers: %#v", got)
-	}
-	if got := res.Header["Link"]; got != "<https://example.com/a>; rel=preload; <https://example.com/b>; rel=next" {
-		t.Fatalf("unexpected flattened link header: %s", got)
-	}
-}
-
-func TestResponseCookieCompatibilityViewIsLossy(t *testing.T) {
+func TestResponseCookiesListContainsMultipleCookies(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, &http.Cookie{Name: "session", Value: "root", Path: "/"})
 		http.SetCookie(w, &http.Cookie{Name: "session", Value: "admin", Path: "/admin"})
@@ -711,11 +681,11 @@ func TestResponseCookieCompatibilityViewIsLossy(t *testing.T) {
 	if len(res.CookiesList) != 2 {
 		t.Fatalf("expected 2 cookies, got %#v", res.CookiesList)
 	}
-	if got := res.Cookie["session"]; got != "admin" {
-		t.Fatalf("unexpected compatibility cookie value: %s", got)
+	if res.CookiesList[0].Value != "root" {
+		t.Fatalf("unexpected first cookie value: %s", res.CookiesList[0].Value)
 	}
-	if got := res.Cookies; got != "session=root; session=admin" {
-		t.Fatalf("unexpected cookies summary: %s", got)
+	if res.CookiesList[1].Value != "admin" {
+		t.Fatalf("unexpected second cookie value: %s", res.CookiesList[1].Value)
 	}
 }
 
