@@ -79,7 +79,7 @@ func (cfg *callConfig) validateTransportOptions() error {
 		return nil
 	}
 	if cfg.proxySet || cfg.localAddrSet || cfg.tlsConfig != nil || cfg.fingerprint != "" {
-		return fmt.Errorf("WithProxy cannot be combined with other transport options")
+		return fmt.Errorf("VLESS proxy cannot be combined with other transport options")
 	}
 	return nil
 }

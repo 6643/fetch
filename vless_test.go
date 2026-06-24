@@ -3,6 +3,7 @@ package fetch
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/binary"
 	"fmt"
@@ -165,10 +166,26 @@ func TestHandshakeUTLSWebsocketForcesHTTP1ALPN(t *testing.T) {
 func TestVlessProxyRejectsOtherTransportOptions(t *testing.T) {
 	_, err := newCallConfig(
 		WithProxy("vless://"+testVlessUUID+"@example.com:443?security=tls&type=ws"),
-		WithProxy("http://127.0.0.1:8080"),
+		WithFingerprint("chrome"),
 	)
 	if err == nil {
-		t.Fatal("expected VLESS and proxy options to be mutually exclusive")
+		t.Fatal("expected VLESS and fingerprint options to be mutually exclusive")
+	}
+
+	_, err = newCallConfig(
+		WithProxy("vless://"+testVlessUUID+"@example.com:443?security=tls&type=ws"),
+		WithLocalAddr("127.0.0.1"),
+	)
+	if err == nil {
+		t.Fatal("expected VLESS and local addr options to be mutually exclusive")
+	}
+
+	_, err = newCallConfig(
+		WithProxy("vless://"+testVlessUUID+"@example.com:443?security=tls&type=ws"),
+		WithTLSConfig(&tls.Config{}),
+	)
+	if err == nil {
+		t.Fatal("expected VLESS and TLS config options to be mutually exclusive")
 	}
 }
 
@@ -217,6 +234,38 @@ func TestVlessProxyReplacesTransport(t *testing.T) {
 	}
 	if rt == nil {
 		t.Fatal("expected non-nil round tripper for VLESS")
+	}
+}
+
+func TestWithProxyLastCallWins(t *testing.T) {
+	// VLESS overrides HTTP proxy
+	cfg, err := newCallConfig(
+		WithProxy("http://127.0.0.1:8080"),
+		WithProxy("vless://"+testVlessUUID+"@example.com:443?security=tls&type=ws"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.proxyURI == "" {
+		t.Fatal("expected proxyURI to be set after VLESS override")
+	}
+	if cfg.proxySet {
+		t.Fatal("expected proxySet to be false after VLESS override")
+	}
+
+	// HTTP proxy overrides VLESS
+	cfg2, err := newCallConfig(
+		WithProxy("vless://"+testVlessUUID+"@example.com:443?security=tls&type=ws"),
+		WithProxy("http://127.0.0.1:8080"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg2.proxyURI != "" {
+		t.Fatal("expected proxyURI to be empty after HTTP override")
+	}
+	if !cfg2.proxySet {
+		t.Fatal("expected proxySet to be true after HTTP override")
 	}
 }
 

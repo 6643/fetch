@@ -23,6 +23,7 @@ func setupVless(cfg *callConfig, vlessURI string) error {
 		return fmt.Errorf("VLESS URI must start with vless://")
 	}
 	cfg.proxyURI = vlessURI
+	cfg.proxySet = false
 	return nil
 }
 

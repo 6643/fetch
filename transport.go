@@ -246,6 +246,8 @@ func WithProxy(rawURL string) Option {
 
 func setupHTTPProxy(cfg *callConfig, rawURL string) error {
 	cfg.proxySet = true
+	cfg.proxyURI = ""
+	cfg.proxyURL = nil
 	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
 		return fmt.Errorf("failed to parse proxy url %q: %w", rawURL, err)
