@@ -18,17 +18,12 @@ import (
 	utls "github.com/refraction-networking/utls"
 )
 
-func WithVless(vlessURI string) Option {
-	return func(cfg *callConfig) error {
-		if vlessURI == "" {
-			return fmt.Errorf("VLESS URI cannot be empty")
-		}
-		if !strings.HasPrefix(vlessURI, "vless://") {
-			return fmt.Errorf("VLESS URI must start with vless://")
-		}
-		cfg.vlessURI = vlessURI
-		return nil
+func setupVless(cfg *callConfig, vlessURI string) error {
+	if !strings.HasPrefix(vlessURI, "vless://") {
+		return fmt.Errorf("VLESS URI must start with vless://")
 	}
+	cfg.proxyURI = vlessURI
+	return nil
 }
 
 func newVlessRoundTripper(vlessURI string) (http.RoundTripper, error) {

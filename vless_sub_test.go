@@ -81,7 +81,7 @@ func TestVlessSubNodes(t *testing.T) {
 			start := time.Now()
 			res, err := Get(
 				"https://cloudflare.com/cdn-cgi/trace",
-				WithVless(n.uri),
+				WithProxy(n.uri),
 				WithTimeout(15*time.Second),
 			)
 			latency := time.Since(start)

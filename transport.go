@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 )
@@ -40,8 +41,8 @@ func newDefaultTransport() *http.Transport {
 
 func transportFor(cfg *callConfig) (http.RoundTripper, func(), error) {
 	// VLESS: replace transport entirely with a VLESS round tripper
-	if cfg.vlessURI != "" {
-		rt, err := newVlessRoundTripper(cfg.vlessURI)
+	if cfg.proxyURI != "" {
+		rt, err := newVlessRoundTripper(cfg.proxyURI)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -213,27 +214,47 @@ func newLocalDialer(localAddr string) (*net.Dialer, error) {
 	}, nil
 }
 
-// WithProxy routes the current request through the provided proxy URL.
+// WithProxy routes the current request through the provided proxy.
+// The proxy type is determined by the URL scheme:
+//   - vless:// — VLESS tunnel (replaces transport entirely)
+//   - http://, https:// — HTTP CONNECT proxy
+//   - socks5://, socks5h:// — SOCKS5 proxy
+//
 // Passing an empty string disables proxying for the current request.
 func WithProxy(rawURL string) Option {
 	return func(cfg *callConfig) error {
-		cfg.proxySet = true
 		if rawURL == "" {
+			cfg.proxySet = true
 			cfg.proxyURL = nil
+			cfg.proxyURI = ""
 			return nil
 		}
 
-		parsedURL, err := url.Parse(rawURL)
-		if err != nil {
-			return fmt.Errorf("failed to parse proxy url %q: %w", rawURL, err)
-		}
-		if !parsedURL.IsAbs() || parsedURL.Scheme == "" || parsedURL.Host == "" {
-			return fmt.Errorf("proxy url %q must be an absolute URL", rawURL)
-		}
-
-		cfg.proxyURL = parsedURL
-		return nil
+		switch {
+		case strings.HasPrefix(rawURL, "vless://"):
+			return setupVless(cfg, rawURL)
+		case strings.HasPrefix(rawURL, "http://"),
+			strings.HasPrefix(rawURL, "https://"),
+			strings.HasPrefix(rawURL, "socks5://"),
+			strings.HasPrefix(rawURL, "socks5h://"):
+			return setupHTTPProxy(cfg, rawURL)
+		default:
+			return fmt.Errorf("unsupported proxy scheme in %q", rawURL)
 	}
+	}
+}
+
+func setupHTTPProxy(cfg *callConfig, rawURL string) error {
+	cfg.proxySet = true
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("failed to parse proxy url %q: %w", rawURL, err)
+	}
+	if !parsedURL.IsAbs() || parsedURL.Scheme == "" || parsedURL.Host == "" {
+		return fmt.Errorf("proxy url %q must be an absolute URL", rawURL)
+	}
+	cfg.proxyURL = parsedURL
+	return nil
 }
 
 // WithLocalAddr binds the request to a specific local IP.

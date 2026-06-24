@@ -35,11 +35,11 @@ type callConfig struct {
 
 	proxyURL     *url.URL
 	proxySet     bool
+	proxyURI     string
 	localAddr    string
 	localAddrSet bool
 	tlsConfig    *tls.Config
 	fingerprint  string
-	vlessURI     string
 }
 
 func newCallConfig(opts ...Option) (*callConfig, error) {
@@ -71,15 +71,15 @@ func (cfg *callConfig) contextWithTimeout() (context.Context, context.CancelFunc
 }
 
 func (cfg *callConfig) hasTransportOverrides() bool {
-	return cfg.proxySet || cfg.localAddrSet || cfg.tlsConfig != nil || cfg.fingerprint != "" || cfg.vlessURI != ""
+	return cfg.proxySet || cfg.proxyURI != "" || cfg.localAddrSet || cfg.tlsConfig != nil || cfg.fingerprint != ""
 }
 
 func (cfg *callConfig) validateTransportOptions() error {
-	if cfg.vlessURI == "" {
+	if cfg.proxyURI == "" {
 		return nil
 	}
 	if cfg.proxySet || cfg.localAddrSet || cfg.tlsConfig != nil || cfg.fingerprint != "" {
-		return fmt.Errorf("WithVless cannot be combined with other transport options")
+		return fmt.Errorf("WithProxy cannot be combined with other transport options")
 	}
 	return nil
 }

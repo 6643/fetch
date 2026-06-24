@@ -162,9 +162,9 @@ func TestHandshakeUTLSWebsocketForcesHTTP1ALPN(t *testing.T) {
 	}
 }
 
-func TestWithVlessRejectsOtherTransportOptions(t *testing.T) {
+func TestVlessProxyRejectsOtherTransportOptions(t *testing.T) {
 	_, err := newCallConfig(
-		WithVless("vless://"+testVlessUUID+"@example.com:443?security=tls&type=ws"),
+		WithProxy("vless://"+testVlessUUID+"@example.com:443?security=tls&type=ws"),
 		WithProxy("http://127.0.0.1:8080"),
 	)
 	if err == nil {
@@ -172,29 +172,29 @@ func TestWithVlessRejectsOtherTransportOptions(t *testing.T) {
 	}
 }
 
-func TestWithVlessAcceptsValidURI(t *testing.T) {
-	_, err := newCallConfig(WithVless("vless://" + testVlessUUID + "@example.com:443?security=tls&type=ws"))
+func TestVlessProxyAcceptsValidURI(t *testing.T) {
+	_, err := newCallConfig(WithProxy("vless://" + testVlessUUID + "@example.com:443?security=tls&type=ws"))
 	if err != nil {
 		t.Fatalf("expected valid VLESS URI, got error: %v", err)
 	}
 }
 
-func TestWithVlessRejectsEmpty(t *testing.T) {
-	_, err := newCallConfig(WithVless(""))
-	if err == nil {
-		t.Fatal("expected error for empty VLESS URI")
+func TestVlessProxyRejectsEmpty(t *testing.T) {
+	_, err := newCallConfig(WithProxy(""))
+	if err != nil {
+		t.Fatalf("unexpected error for empty proxy URI: %v", err)
 	}
 }
 
-func TestWithVlessRejectsNonVlessScheme(t *testing.T) {
-	_, err := newCallConfig(WithVless("https://example.com"))
+func TestWithProxyRejectsUnsupportedScheme(t *testing.T) {
+	_, err := newCallConfig(WithProxy("ftp://example.com"))
 	if err == nil {
-		t.Fatal("expected error for non-vless URI scheme")
+		t.Fatal("expected error for unsupported proxy scheme")
 	}
 }
 
-func TestWithVlessSetsTransportOverride(t *testing.T) {
-	cfg, err := newCallConfig(WithVless("vless://" + testVlessUUID + "@example.com:443?security=tls&type=ws"))
+func TestVlessProxySetsTransportOverride(t *testing.T) {
+	cfg, err := newCallConfig(WithProxy("vless://" + testVlessUUID + "@example.com:443?security=tls&type=ws"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,8 +203,8 @@ func TestWithVlessSetsTransportOverride(t *testing.T) {
 	}
 }
 
-func TestWithVlessReplacesTransport(t *testing.T) {
-	cfg, err := newCallConfig(WithVless("vless://" + testVlessUUID + "@example.com:443?security=tls&type=ws"))
+func TestVlessProxyReplacesTransport(t *testing.T) {
+	cfg, err := newCallConfig(WithProxy("vless://" + testVlessUUID + "@example.com:443?security=tls&type=ws"))
 	if err != nil {
 		t.Fatal(err)
 	}

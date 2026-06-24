@@ -30,7 +30,7 @@ func TestVlessNodesGetIP(t *testing.T) {
 		t.Run(node.name, func(t *testing.T) {
 			res, err := Get(
 				"https://cloudflare.com/cdn-cgi/trace",
-				WithVless(node.uri),
+				WithProxy(node.uri),
 				WithTimeout(15*time.Second),
 			)
 			if err != nil {

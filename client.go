@@ -8,8 +8,8 @@ import (
 
 // Client is a reusable HTTP client with a pre-configured transport and default
 // request settings. Transport-level options (WithProxy, WithLocalAddr,
-// WithTLSConfig, WithFingerprint, WithVless) are locked at creation time and
-// cannot be overridden per-request.
+// WithTLSConfig, WithFingerprint) are locked at creation time and cannot be
+// overridden per-request.
 //
 // Non-transport options passed to NewClient become per-request defaults:
 // WithTimeout, WithResponseBodyLimit, and WithUserAgent. Each can be overridden
@@ -76,7 +76,7 @@ func (c *Client) Do(method, url string, opts ...Option) (*Response, error) {
 
 	if cfg.hasTransportOverrides() {
 		return nil, fmt.Errorf(
-			"transport options (WithProxy, WithLocalAddr, WithTLSConfig, WithFingerprint, WithVless) " +
+			"transport options (WithProxy, WithLocalAddr, WithTLSConfig, WithFingerprint) " +
 				"cannot be used with Client; configure at NewClient",
 		)
 	}

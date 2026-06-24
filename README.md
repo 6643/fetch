@@ -94,9 +94,8 @@ func main() {
 ```go
 client, err := fetch.NewClient(
 	// 传输层选项：锁定 transport 配置，不可按请求覆盖
-	fetch.WithProxy("http://127.0.0.1:8080"),
 	fetch.WithFingerprint("chrome"),
-	fetch.WithVless("vless://uuid@host:443?security=tls&type=ws&path=%2Fws"),
+	fetch.WithProxy("http://127.0.0.1:8080"),
 
 	// 默认请求参数：可按请求覆盖
 	fetch.WithTimeout(30*time.Second),
@@ -111,7 +110,7 @@ defer client.Close()
 
 说明:
 
-- 传输层选项 (`WithProxy`、`WithLocalAddr`、`WithTLSConfig`、`WithFingerprint`、`WithVless`) 在 `NewClient` 时锁定，按请求传入会返回错误。
+- 传输层选项 (`WithProxy`、`WithLocalAddr`、`WithTLSConfig`、`WithFingerprint`) 在 `NewClient` 时锁定，按请求传入会返回错误。
 - 非传输层选项 (`WithTimeout`、`WithResponseBodyLimit`、`WithUserAgent`) 设为 client 级默认值，按请求传入时会覆盖默认值。
 - `Close()` 释放底层 transport 资源（包括空闲连接），可安全多次调用。
 
@@ -183,17 +182,25 @@ fetch.AddFileData("file", "a.txt", []byte("hello"))
 ### 当次连接参数
 
 ```go
+// 传统代理
 fetch.WithProxy("http://127.0.0.1:8080")
+fetch.WithProxy("socks5://127.0.0.1:1080")
+
+// VLESS 隧道
+fetch.WithProxy("vless://uuid@host:443?security=tls&type=ws&path=%2Fws")
+
+// 其他传输层选项（可与传统代理组合，不可与 VLESS 组合）
 fetch.WithLocalAddr("192.168.1.10")
 fetch.WithTLSConfig(tlsConfig)
 fetch.WithFingerprint("chrome")
-fetch.WithVless("vless://uuid@host:443?security=tls&type=ws&path=%2Fws")
 ```
 
 说明:
 
-- `fetch.WithProxy` 只接受带 `scheme` 和 `host` 的绝对 URL。
-- 使用 `Client` 时，这些选项必须在 `NewClient` 时传入，不可按请求覆盖。
+- `fetch.WithProxy` 根据 URL scheme 自动识别代理类型: `http://`/`https://`/`socks5://`/`socks5h://` 为传统代理, `vless://` 为 VLESS 隧道。
+- 传统代理可与 `WithFingerprint`、`WithTLSConfig`、`WithLocalAddr` 组合使用。
+- VLESS 代理不可与其他传输层选项组合使用, VLESS 传输配置通过 URI 参数 (`sni`/`host`/`path`/`fp`/`ech`) 设置。
+- 使用 `Client` 时, 这些选项必须在 `NewClient` 时传入, 不可按请求覆盖。
 
 ## JSON 示例
 
@@ -263,18 +270,18 @@ res, err := client.Get("https://example.com")
 
 ## VLESS 示例
 
-使用 `WithVless` 通过 VLESS WebSocket 隧道发送请求:
+使用 `WithProxy` 通过 VLESS WebSocket 隧道发送请求:
 
 ```go
 // 一次性请求
 res, err := fetch.Get(
 	"https://example.com",
-	fetch.WithVless("vless://uuid@server:443?security=tls&type=ws&path=%2Fws&fp=chrome"),
+	fetch.WithProxy("vless://uuid@server:443?security=tls&type=ws&path=%2Fws&fp=chrome"),
 )
 
 // 或通过 Client 复用（推荐）
 client, _ := fetch.NewClient(
-	fetch.WithVless("vless://uuid@server:443?security=tls&type=ws&path=%2Fws&fp=chrome"),
+	fetch.WithProxy("vless://uuid@server:443?security=tls&type=ws&path=%2Fws&fp=chrome"),
 )
 defer client.Close()
 res, err := client.Get("https://example.com")
@@ -283,7 +290,7 @@ res, err := client.Get("https://example.com")
 说明:
 
 - URI 必须是 `security=tls&type=ws` 的 VLESS 分享链接
-- 使用 `WithVless` 时, 不要与 `WithProxy`、`WithLocalAddr`、`WithTLSConfig`、`WithFingerprint` 等传输层选项混用; 当前实现会返回错误, 且请求不会被发送
+- VLESS 代理不可与传统代理、`WithLocalAddr`、`WithTLSConfig`、`WithFingerprint` 等传输层选项混用; 当前实现会返回错误, 且请求不会被发送
 - 使用 `Client` 时, 传输层选项在 `NewClient` 时锁定; 非传输层选项 (`WithTimeout`、`AddHeader`、`WithJSON` 等) 仍正常工作
 - 传输配置 (`sni`/`host`/`path`/`fp`/`ech`) 在 VLESS URI 的参数中设置
 - `ech` 支持 `<public-name>+<https-doh-endpoint>` 形式, 会按需通过 DoH 解析并按 TTL 缓存 ECH ConfigList

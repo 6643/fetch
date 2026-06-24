@@ -227,15 +227,15 @@ func TestClientRejectsTransportOptionsPerRequest(t *testing.T) {
 		t.Fatal("expected error for per-request local addr")
 	}
 
-	_, err = client.Get("http://example.com", WithFingerprint("chrome"))
+	_, err = client.Get("http://example.com", WithProxy("vless://11111111-2222-3333-4444-555555555555@example.com:443?security=tls&type=ws"))
 	if err == nil {
-		t.Fatal("expected error for per-request fingerprint")
+		t.Fatal("expected error for per-request vless proxy")
 	}
 }
 
 func TestClientVlessTransport(t *testing.T) {
 	client, err := NewClient(
-		WithVless("vless://11111111-2222-3333-4444-555555555555@example.com:443?security=tls&type=ws"),
+		WithProxy("vless://11111111-2222-3333-4444-555555555555@example.com:443?security=tls&type=ws"),
 	)
 	if err != nil {
 		t.Fatal(err)
