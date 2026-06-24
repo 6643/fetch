@@ -17,15 +17,22 @@ type Response struct {
 	Location   string
 	// Cookie contains a lossy compatibility view of response cookies keyed by name.
 	// If multiple cookies share the same name, the last parsed value wins.
+	//
+	// Deprecated: Use CookiesList for complete cookie semantics.
 	Cookie map[string]string
 	// Cookies contains a lossy compatibility summary string built from parsed
 	// response cookies as "name=value" pairs joined by semicolons. It is not the
 	// raw Set-Cookie header value and should not be treated as a lossless replay format.
+	//
+	// Deprecated: Use CookiesList for complete cookie semantics.
 	Cookies string
 	// CookiesList contains the parsed response cookies and is the preferred field
 	// for new code that needs complete cookie semantics.
 	CookiesList []*http.Cookie
 	// Header contains a flattened view of response headers for compatibility.
+	// Multi-value headers are joined with "; ", which loses the original structure.
+	//
+	// Deprecated: Use Headers for complete HTTP header semantics.
 	Header map[string]string
 	// Headers contains the raw response headers.
 	Headers http.Header

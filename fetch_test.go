@@ -822,7 +822,7 @@ func TestTransportForDoesNotCacheNewKeyWhenCacheIsFull(t *testing.T) {
 	if secondTransport == secondTransportRepeat {
 		t.Fatal("expected overflow key to bypass cache")
 	}
-	if got := overrideTransportCacheEntries.Load(); got != 1 {
+	if got := overrideTransportCacheCount; got != 1 {
 		t.Fatalf("expected cache entry count to stay at 1, got %d", got)
 	}
 }

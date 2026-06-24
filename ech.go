@@ -59,7 +59,8 @@ func resolveECHConfigList(ctx context.Context, spec echQuerySpec) (echConfigList
 	req.Header.Set("Accept", "application/dns-message")
 	req.Header.Set("Content-Type", "application/dns-message")
 
-	resp, err := http.DefaultClient.Do(req)
+	dohClient := &http.Client{Timeout: 5 * time.Second}
+	resp, err := dohClient.Do(req)
 	if err != nil {
 		return echConfigListResult{}, fmt.Errorf("query ECH config: %w", err)
 	}
@@ -96,7 +97,8 @@ func resolveECHConfigListGET(ctx context.Context, spec echQuerySpec, query []byt
 	}
 	req.Header.Set("Accept", "application/dns-message")
 
-	resp, err := http.DefaultClient.Do(req)
+	dohClient := &http.Client{Timeout: 5 * time.Second}
+	resp, err := dohClient.Do(req)
 	if err != nil {
 		return echConfigListResult{}, fmt.Errorf("query ECH config: %w", err)
 	}

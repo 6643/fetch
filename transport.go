@@ -9,15 +9,17 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
-var defaultTransport = newDefaultTransport()
-var overrideTransportCache sync.Map
-var overrideTransportCacheEntries atomic.Int64
+var (
+	defaultTransport = newDefaultTransport()
+	overrideTransportCache      sync.Map
+	overrideTransportCacheMu    sync.Mutex
+	overrideTransportCacheCount int
+)
 
-var maxOverrideTransportCacheEntries int64 = 64
+var maxOverrideTransportCacheEntries int = 64
 
 type transportCacheKey struct {
 	proxySet     bool
@@ -102,7 +104,10 @@ func loadCachedTransport(key transportCacheKey) (*http.Transport, bool) {
 }
 
 func storeCachedTransport(key transportCacheKey, transport *http.Transport) (*http.Transport, bool) {
-	if overrideTransportCacheEntries.Load() >= maxOverrideTransportCacheEntries {
+	overrideTransportCacheMu.Lock()
+	defer overrideTransportCacheMu.Unlock()
+
+	if overrideTransportCacheCount >= maxOverrideTransportCacheEntries {
 		return transport, false
 	}
 
@@ -111,18 +116,16 @@ func storeCachedTransport(key transportCacheKey, transport *http.Transport) (*ht
 		transport.CloseIdleConnections()
 		return actualTransport.(*http.Transport), true
 	}
-	overrideTransportCacheEntries.Add(1)
-	if overrideTransportCacheEntries.Load() > maxOverrideTransportCacheEntries {
-		overrideTransportCache.Delete(key)
-		overrideTransportCacheEntries.Add(-1)
-		return transport, false
-	}
+	overrideTransportCacheCount++
 	return transport, true
 }
 
 func resetOverrideTransportCache() {
+	overrideTransportCacheMu.Lock()
+	defer overrideTransportCacheMu.Unlock()
+
 	overrideTransportCache = sync.Map{}
-	overrideTransportCacheEntries.Store(0)
+	overrideTransportCacheCount = 0
 }
 
 func applyTransportOptions(transport *http.Transport, cfg *callConfig) error {

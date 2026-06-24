@@ -192,7 +192,9 @@ func websocketUTLSDialContext(tlsConfig *tls.Config) func(ctx context.Context, n
 	helloID := utls.HelloChrome_Auto
 
 	return func(ctx context.Context, network string, addr string) (net.Conn, error) {
-		rawConn, err := (&net.Dialer{}).DialContext(ctx, network, addr)
+		rawConn, err := (&net.Dialer{
+			Timeout: 30 * time.Second,
+		}).DialContext(ctx, network, addr)
 		if err != nil {
 			return nil, err
 		}
