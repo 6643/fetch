@@ -1,12 +1,9 @@
 package fetch
 
 import (
-	"context"
 	"crypto/tls"
 	"fmt"
-	"net"
 	"strings"
-	"time"
 
 	utls "github.com/refraction-networking/utls"
 )
@@ -47,52 +44,6 @@ func resolveFingerprint(name string) (utls.ClientHelloID, error) {
 	default:
 		return utls.ClientHelloID{}, fmt.Errorf("unknown TLS fingerprint %q", name)
 	}
-}
-
-func newUTLSDialContext(fingerprint string, tlsCfg *tls.Config, localAddr string) (func(ctx context.Context, network, addr string) (net.Conn, error), error) {
-	helloID, err := resolveFingerprint(fingerprint)
-	if err != nil {
-		return nil, err
-	}
-
-	tcpDialer := &net.Dialer{
-		Timeout:   30 * time.Second,
-		KeepAlive: 30 * time.Second,
-	}
-	if localAddr != "" {
-		ip := net.ParseIP(localAddr)
-		if ip == nil {
-			return nil, fmt.Errorf("invalid local address %q", localAddr)
-		}
-		tcpDialer.LocalAddr = &net.TCPAddr{IP: ip}
-	}
-
-	uConfig := toUTLSConfig(tlsCfg)
-
-	return func(ctx context.Context, network, addr string) (net.Conn, error) {
-		host, _, err := net.SplitHostPort(addr)
-		if err != nil {
-			return nil, err
-		}
-
-		tcpConn, err := tcpDialer.DialContext(ctx, network, addr)
-		if err != nil {
-			return nil, err
-		}
-
-		connCfg := uConfig.Clone()
-		if connCfg.ServerName == "" {
-			connCfg.ServerName = host
-		}
-
-		tlsConn := utls.UClient(tcpConn, connCfg, helloID)
-		if err := tlsConn.HandshakeContext(ctx); err != nil {
-			tcpConn.Close()
-			return nil, err
-		}
-
-		return tlsConn, nil
-	}, nil
 }
 
 func toUTLSConfig(cfg *tls.Config) *utls.Config {

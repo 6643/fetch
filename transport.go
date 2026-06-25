@@ -93,6 +93,13 @@ func transportFor(cfg *callConfig) (http.RoundTripper, func(), error) {
 	return cachedTransport, nil, nil
 }
 
+func resetOverrideTransportCache() {
+	overrideTransportCache = sync.Map{}
+	overrideTransportCacheMu.Lock()
+	overrideTransportCacheCount = 0
+	overrideTransportCacheMu.Unlock()
+}
+
 // ─── TLS 指纹 + HTTP/2 自定义 Transport ───────────
 
 type fingerprintTransport struct {
