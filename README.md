@@ -1,6 +1,96 @@
-# fetch
+# fetch — HTTP 客户端库
+
+基于 Go 标准库 `net/http` 的轻量级 HTTP 客户端，支持代理、TLS 指纹注入和自定义 TLS 配置。
 
 一个无状态、打平函数式参数的 HTTP 工具包。
+
+## 安装
+
+```bash
+go get github.com/6643/fetch
+```
+
+## 快速开始
+
+### 一次性请求
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+
+    "github.com/6643/fetch"
+)
+
+func main() {
+    res, err := fetch.Get(
+        "https://example.com/api",
+        fetch.WithTimeout(5*time.Second),
+        fetch.AddQuery("q", "golang"),
+        fetch.AddHeader("X-Trace-ID", "req-1"),
+        fetch.AddCookie("sid", "abc"),
+    )
+    if err != nil {
+        panic(err)
+    }
+
+    fmt.Println(res.StatusCode)
+    fmt.Println(res.Text())
+}
+```
+
+### 复用 Client
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+
+    "github.com/6643/fetch"
+)
+
+func main() {
+    client, err := fetch.NewClient(
+        fetch.WithFingerprint("chrome"),
+        fetch.WithTimeout(30*time.Second),
+    )
+    if err != nil {
+        panic(err)
+    }
+    defer client.Close()
+
+    // 复用同一 transport，多次请求
+    res1, _ := client.Get("https://a.com", fetch.AddQuery("k", "1"))
+    res2, _ := client.Get("https://b.com", fetch.WithJSON(payload))
+
+    fmt.Println(res1.Text())
+    fmt.Println(res2.StatusCode)
+}
+```
+
+## 项目结构
+
+本项目采用 monorepo 结构，包含三个 Go 子模块：
+
+```
+fetch/
+├── tlsfingerprint/    # TLS 指纹 (uTLS) 库
+├── httpproxy/         # VLESS 代理协议 + 本地 HTTP 代理
+├── go.work            # Go workspace
+└── README.md
+```
+
+### 子模块
+
+| 模块 | 文档 | 用途 |
+|------|------|------|
+| `fetch` | 本 README | HTTP 客户端库 |
+| `tlsfingerprint` | [tlsfingerprint/README.md](tlsfingerprint/README.md) | TLS 指纹 / uTLS |
+| `httpproxy` | [httpproxy/README.md](httpproxy/README.md) | VLESS 代理协议 / 本地 HTTP 代理 |
 
 ## 特性
 
@@ -19,91 +109,23 @@
 - override `Transport` 缓存使用固定上限; 达到上限后, 新的 override 组合会退回当次临时 `Transport`, 以避免缓存持续增长。
 - proxy override `Transport` 的缓存键不会保留明文代理凭据。
 
-## 安装
-
-```bash
-go get github.com/6643/fetch
-```
-
-## 快速开始
-
-### 一次性请求
-
-```go
-package main
-
-import (
-	"fmt"
-	"time"
-
-	"github.com/6643/fetch"
-)
-
-func main() {
-	res, err := fetch.Get(
-		"https://example.com/api",
-		fetch.WithTimeout(5*time.Second),
-		fetch.AddQuery("q", "golang"),
-		fetch.AddHeader("X-Trace-ID", "req-1"),
-		fetch.AddCookie("sid", "abc"),
-	)
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Println(res.StatusCode)
-	fmt.Println(res.Text())
-}
-```
-
-### 复用 Client
-
-```go
-package main
-
-import (
-	"fmt"
-	"time"
-
-	"github.com/6643/fetch"
-)
-
-func main() {
-	client, err := fetch.NewClient(
-		fetch.WithFingerprint("chrome"),
-		fetch.WithTimeout(30*time.Second),
-	)
-	if err != nil {
-		panic(err)
-	}
-	defer client.Close()
-
-	// 复用同一 transport，多次请求
-	res1, _ := client.Get("https://a.com", fetch.AddQuery("k", "1"))
-	res2, _ := client.Get("https://b.com", fetch.WithJSON(payload))
-
-	fmt.Println(res1.Text())
-	fmt.Println(res2.StatusCode)
-}
-```
-
 ## Client
 
 `Client` 封装了一个可复用的 transport 和默认请求参数，适合高频请求场景：
 
 ```go
 client, err := fetch.NewClient(
-	// 传输层选项：锁定 transport 配置，不可按请求覆盖
-	fetch.WithFingerprint("chrome"),
-	fetch.WithProxy("http://127.0.0.1:8080"),
+    // 传输层选项：锁定 transport 配置，不可按请求覆盖
+    fetch.WithFingerprint("chrome"),
+    fetch.WithProxy("http://127.0.0.1:8080"),
 
-	// 默认请求参数：可按请求覆盖
-	fetch.WithTimeout(30*time.Second),
-	fetch.WithResponseBodyLimit(10 << 20),
-	fetch.WithUserAgent("my-agent/1.0"),
+    // 默认请求参数：可按请求覆盖
+    fetch.WithTimeout(30*time.Second),
+    fetch.WithResponseBodyLimit(10 << 20),
+    fetch.WithUserAgent("my-agent/1.0"),
 )
 if err != nil {
-	panic(err)
+    panic(err)
 }
 defer client.Close()
 ```
@@ -197,91 +219,93 @@ fetch.WithFingerprint("chrome")
 
 说明:
 
-- `fetch.WithProxy` 根据 URL scheme 自动识别代理类型: `http://`/`https://`/`socks5://`/`socks5h://` 为传统代理, `vless://` 为 VLESS 隧道。
+- `fetch.WithProxy` 根据 URL scheme 自动识别代理类型: `http://`/`https://`/`socks5://`/`socks5h://` 为传统代理，`vless://` 为 VLESS 隧道。
 - 传统代理可与 `WithFingerprint`、`WithTLSConfig`、`WithLocalAddr` 组合使用。
-- VLESS 代理不可与其他传输层选项组合使用, VLESS 传输配置通过 URI 参数 (`sni`/`host`/`path`/`fp`/`ech`) 设置。
-- 使用 `Client` 时, 这些选项必须在 `NewClient` 时传入, 不可按请求覆盖。
+- VLESS 代理不可与其他传输层选项组合使用，VLESS 传输配置通过 URI 参数 (`sni`/`host`/`path`/`fp`/`ech`) 设置。
+- 使用 `Client` 时，这些选项必须在 `NewClient` 时传入，不可按请求覆盖。
 
-## JSON 示例
+## 示例
+
+### JSON 示例
 
 ```go
 payload := struct {
-	Name string `json:"name"`
+    Name string `json:"name"`
 }{
-	Name: "alice",
+    Name: "alice",
 }
 
 res, err := fetch.Post(
-	"https://example.com/users",
-	fetch.WithJSON(payload),
+    "https://example.com/users",
+    fetch.WithJSON(payload),
 )
 if err != nil {
-	panic(err)
+    panic(err)
 }
 ```
 
-## 文件上传示例
+### 文件上传示例
 
 ```go
 res, err := fetch.Post(
-	"https://example.com/upload",
-	fetch.AddMultipartField("description", "sample upload"),
-	fetch.AddFileData("file", "hello.txt", []byte("hello")),
+    "https://example.com/upload",
+    fetch.AddMultipartField("description", "sample upload"),
+    fetch.AddFileData("file", "hello.txt", []byte("hello")),
 )
 if err != nil {
-	panic(err)
+    panic(err)
 }
 ```
 
-## TLS 示例
+### TLS 示例
 
 ```go
 res, err := fetch.Get(
-	"https://example.com/secure",
-	fetch.WithTLSConfig(tlsConfig),
+    "https://example.com/secure",
+    fetch.WithTLSConfig(tlsConfig),
 )
 if err != nil {
-	panic(err)
+    panic(err)
 }
 ```
 
-## TLS 指纹示例
+### TLS 指纹示例
 
 使用 `WithFingerprint` 模拟浏览器 TLS ClientHello 指纹:
 
 ```go
 // 一次性请求
 res, err := fetch.Get(
-	"https://example.com",
-	fetch.WithFingerprint("chrome"),
+    "https://example.com",
+    fetch.WithFingerprint("chrome"),
 )
 
 // 或通过 Client 复用
 client, _ := fetch.NewClient(
-	fetch.WithFingerprint("chrome"),
+    fetch.WithFingerprint("chrome"),
 )
 defer client.Close()
 res, err := client.Get("https://example.com")
 ```
 
-支持的值: `"chrome"`, `"firefox"`, `"safari"`, `"edge"`, `"ios"`, `"android"`, `"random"`, `"randomized"`, `"golang"`, `"custom"`。
+支持的值: `"chrome"`、`"firefox"`、`"safari"`、`"edge"`、`"ios"`、`"android"`、`"random"`、`"randomized"`、`"golang"`、`"custom"`。
 
-可与 `WithTLSConfig` 组合使用, 此时 `WithFingerprint` 控制 ClientHello 指纹形态, `WithTLSConfig` 提供根证书等参数。
+可与 `WithTLSConfig` 组合使用，此时 `WithFingerprint` 控制 ClientHello 指纹形态，`WithTLSConfig` 提供根证书等参数。
 
-## VLESS 示例
+### VLESS 示例
 
 使用 `WithProxy` 通过 VLESS WebSocket 隧道发送请求:
 
 ```go
 // 一次性请求
 res, err := fetch.Get(
-	"https://example.com",
-	fetch.WithProxy("vless://uuid@server:443?security=tls&type=ws&path=%2Fws&fp=chrome"),
+    "https://example.com",
+    fetch.WithProxy("vless://uuid@server:443?security=tls&type=ws&path=%2Fws&fp=chrome"),
 )
 
 // 或通过 Client 复用（推荐）
 client, _ := fetch.NewClient(
-	fetch.WithProxy("vless://uuid@server:443?security=tls&type=ws&path=%2Fws&fp=chrome"),
+    fetch.WithProxy("vless://uuid@server:443?security=tls&type=ws&path=%2Fws&fp=chrome"),
 )
 defer client.Close()
 res, err := client.Get("https://example.com")
@@ -290,22 +314,22 @@ res, err := client.Get("https://example.com")
 说明:
 
 - URI 必须是 `security=tls&type=ws` 的 VLESS 分享链接
-- VLESS 代理不可与传统代理、`WithLocalAddr`、`WithTLSConfig`、`WithFingerprint` 等传输层选项混用; 当前实现会返回错误, 且请求不会被发送
-- 使用 `Client` 时, 传输层选项在 `NewClient` 时锁定; 非传输层选项 (`WithTimeout`、`AddHeader`、`WithJSON` 等) 仍正常工作
+- VLESS 代理不可与传统代理、`WithLocalAddr`、`WithTLSConfig`、`WithFingerprint` 等传输层选项混用；当前实现会返回错误，且请求不会被发送
+- 使用 `Client` 时，传输层选项在 `NewClient` 时锁定；非传输层选项 (`WithTimeout`、`AddHeader`、`WithJSON` 等) 仍正常工作
 - 传输配置 (`sni`/`host`/`path`/`fp`/`ech`) 在 VLESS URI 的参数中设置
-- `ech` 支持 `<public-name>+<https-doh-endpoint>` 形式, 会按需通过 DoH 解析并按 TTL 缓存 ECH ConfigList
-- 推荐通过 `Client` 使用 VLESS, 以复用底层 WebSocket 连接和 ECH 缓存
+- `ech` 支持 `<public-name>+<https-doh-endpoint>` 形式，会按需通过 DoH 解析并按 TTL 缓存 ECH ConfigList
+- 推荐通过 `Client` 使用 VLESS，以复用底层 WebSocket 连接和 ECH 缓存
 
 ## 响应
 
 ```go
 type Response struct {
-	StatusCode  int
-	Status      string
-	Location    string
-	CookiesList []*http.Cookie
-	Headers     http.Header
-	Body        []byte
+    StatusCode  int
+    Status      string
+    Location    string
+    CookiesList []*http.Cookie
+    Headers     http.Header
+    Body        []byte
 }
 ```
 
@@ -318,10 +342,10 @@ res.JSON(&dst)
 
 说明:
 
-- 当响应体为空时, `res.JSON(&dst)` 会返回 `fetch.ErrEmptyBody`。
+- 当响应体为空时，`res.JSON(&dst)` 会返回 `fetch.ErrEmptyBody`。
 - `Response.Headers` 包含完整的原始响应头。
 - `Response.CookiesList` 包含完整的解析后 Cookie 列表。
-- 响应体会先完整读入 `Response.Body`; 默认单次读取上限为 `10 MiB`。
+- 响应体会先完整读入 `Response.Body`；默认单次读取上限为 `10 MiB`。
 
 ## 实现说明
 
@@ -341,7 +365,7 @@ res.JSON(&dst)
 
 - 默认请求复用共享 `defaultTransport`。
 - `WithProxy`、`WithLocalAddr` 组合会命中内部 override `Transport` 缓存。
-- `WithTLSConfig` 会为每次请求创建独立 `Transport`，避免复用过期 TLS 配置; 与 `WithFingerprint` 组合时同样不会进入缓存。
+- `WithTLSConfig` 会为每次请求创建独立 `Transport`，避免复用过期 TLS 配置；与 `WithFingerprint` 组合时同样不会进入缓存。
 - override 缓存键会对代理 URL 做摘要，不直接保存明文凭据。
 - `Client` 在创建时锁定 transport，所有请求复用同一连接池。
 

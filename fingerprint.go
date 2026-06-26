@@ -1,3 +1,8 @@
+// Package fetch — HTTP client library with proxy and TLS fingerprint support.
+//
+// TLS fingerprint functionality has been extracted to the tlsfingerprint
+// submodule (github.com/6643/fetch/tlsfingerprint). These constants are
+// re-exported here for backward compatibility.
 package fetch
 
 import (
