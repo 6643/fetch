@@ -6,7 +6,7 @@ import (
 )
 
 func TestProxyAddr(t *testing.T) {
-	p, err := NewProxy("vless://00000000-0000-0000-0000-000000000000@example.com:443?security=tls&type=ws&encryption=none")
+	p, err := NewVlessProxy("vless://00000000-0000-0000-0000-000000000000@example.com:443?security=tls&type=ws&encryption=none")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +29,7 @@ func TestProxyAddr(t *testing.T) {
 }
 
 func TestProxyStartStop(t *testing.T) {
-	p, err := NewProxy("vless://00000000-0000-0000-0000-000000000000@example.com:443?security=tls&type=ws&encryption=none")
+	p, err := NewVlessProxy("vless://00000000-0000-0000-0000-000000000000@example.com:443?security=tls&type=ws&encryption=none")
 	if err != nil {
 		t.Fatal(err)
 	}

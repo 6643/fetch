@@ -93,9 +93,9 @@ func testNode(c cfg) res {
 
 	t0 := time.Now()
 
-	p, err := proxy.NewProxy(c.raw)
+	p, err := proxy.NewVlessProxy(c.raw)
 	if err != nil {
-		return res{cfg: c, err: fmt.Sprintf("NewProxy: %v", err)}
+		return res{cfg: c, err: fmt.Sprintf("NewVlessProxy: %v", err)}
 	}
 	if err := p.Start(ctx, ""); err != nil {
 		return res{cfg: c, err: fmt.Sprintf("Start: %v", err)}

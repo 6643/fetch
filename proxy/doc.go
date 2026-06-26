@@ -6,9 +6,9 @@
 //	transport := &http.Transport{DialContext: dialFn}
 //	client := &http.Client{Transport: transport}
 //
-// Use NewProxy/Start to run a local HTTP proxy server that routes through VLESS:
+// Use NewVlessProxy/Start to run a local HTTP proxy server that routes through VLESS:
 //
-//	p, err := proxy.NewProxy("vless://uuid@host:port?...")
+//	p, err := proxy.NewVlessProxy("vless://uuid@host:port?...")
 //	p.Start(ctx, "")
 //	// Then configure curl -x http://127.0.0.1:<port>
 //	defer p.Close()

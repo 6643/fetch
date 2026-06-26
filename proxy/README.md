@@ -33,7 +33,7 @@ import (
     "github.com/6643/fetch/proxy"
 )
 
-p, err := proxy.NewProxy("vless://uuid@host:port?security=tls&type=ws")
+p, err := proxy.NewVlessProxy("vless://uuid@host:port?security=tls&type=ws")
 if err != nil {
     panic(err)
 }
@@ -82,7 +82,7 @@ vless://<UUID>@<host>:<port>?security=tls&type=ws[&fp=chrome][&host=example.com]
 |------|------|
 | `ParseVlessURI(raw) (Config, error)` | 解析 VLESS URI |
 | `DialContext(vlessURI) (DialContext, error)` | 创建 VLESS 拨号函数 |
-| `NewProxy(vlessURI) (*Proxy, error)` | 创建本地 HTTP 代理 |
+| `NewVlessProxy(vlessURI) (*Proxy, error)` | 创建本地 HTTP 代理 |
 | `(*Proxy).Start(ctx, addr) error` | 启动本地 HTTP 代理 |
 | `(*Proxy).Addr() net.Addr` | 返回监听地址 |
 | `(*Proxy).Close() error` | 关闭代理 |

@@ -305,7 +305,7 @@ import (
 )
 
 // 1. 启动本地 HTTP 代理（自动绑定随机端口）
-p, err := proxy.NewProxy(
+p, err := proxy.NewVlessProxy(
     "vless://uuid@server:443?security=tls&type=ws&path=%2Fws&fp=chrome",
 )
 if err != nil {

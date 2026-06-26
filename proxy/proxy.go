@@ -16,8 +16,8 @@ type Proxy struct {
 	listener net.Listener
 }
 
-// NewProxy creates a new local HTTP proxy server for the given VLESS URI.
-func NewProxy(vlessURI string) (*Proxy, error) {
+// NewVlessProxy creates a new local HTTP proxy server for the given VLESS URI.
+func NewVlessProxy(vlessURI string) (*Proxy, error) {
 	cfg, err := ParseVlessURI(vlessURI)
 	if err != nil {
 		return nil, err
