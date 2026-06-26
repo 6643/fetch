@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/6643/fetch/tlsfingerprint"
+	"github.com/6643/fetch/fingerprint"
 )
 
 func TestWithFingerprintAcceptsValidNames(t *testing.T) {
@@ -73,8 +73,8 @@ func TestWithFingerprintCreatesTransport(t *testing.T) {
 	if cleanup != nil {
 		defer cleanup()
 	}
-	if _, ok := rt.(*tlsfingerprint.Transport); !ok {
-		t.Fatalf("expected *tlsfingerprint.Transport from transportFor, got %T", rt)
+	if _, ok := rt.(*fingerprint.Transport); !ok {
+		t.Fatalf("expected *fingerprint.Transport from transportFor, got %T", rt)
 	}
 }
 
@@ -117,11 +117,11 @@ func TestFingerprintTransportCache(t *testing.T) {
 		defer cleanupC()
 	}
 
-	fpA, ok := transportA.(*tlsfingerprint.Transport)
-	_, okB := transportB.(*tlsfingerprint.Transport)
-	_, okC := transportC.(*tlsfingerprint.Transport)
+	fpA, ok := transportA.(*fingerprint.Transport)
+	_, okB := transportB.(*fingerprint.Transport)
+	_, okC := transportC.(*fingerprint.Transport)
 	if !ok || !okB || !okC {
-		t.Fatal("expected *tlsfingerprint.Transport")
+		t.Fatal("expected *fingerprint.Transport")
 	}
 	if fpA.Fingerprint() != "chrome" {
 		t.Fatal("expected chrome fingerprint")
@@ -146,7 +146,7 @@ func TestUTLSConfigPreservesSecurityCallbacksAndProtocolFields(t *testing.T) {
 	roots := x509.NewCertPool()
 	verifyPeer := func(_ [][]byte, _ [][]*x509.Certificate) error { return nil }
 
-	cfg := tlsfingerprint.ToUTLSConfig(&tls.Config{
+	cfg := fingerprint.ToUTLSConfig(&tls.Config{
 		RootCAs:               roots,
 		ServerName:            "front.example",
 		NextProtos:            []string{"h2", "http/1.1"},

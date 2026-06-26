@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	github.com/6643/fetch/httpproxy v0.0.0-00010101000000-000000000000
-	github.com/6643/fetch/tlsfingerprint v0.0.0
+	github.com/6643/fetch/fingerprint v0.0.0
 )
 
 require (
@@ -20,5 +20,5 @@ require (
 
 replace (
 	github.com/6643/fetch/httpproxy => ./httpproxy
-	github.com/6643/fetch/tlsfingerprint => ./tlsfingerprint
+	github.com/6643/fetch/fingerprint => ./fingerprint
 )

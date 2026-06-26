@@ -78,7 +78,7 @@ func main() {
 
 ```
 fetch/
-├── tlsfingerprint/    # TLS 指纹 (uTLS) 库
+├── fingerprint/    # TLS 指纹 (uTLS) 库
 ├── httpproxy/         # VLESS 代理协议 + 本地 HTTP 代理
 ├── go.work            # Go workspace
 └── README.md
@@ -89,7 +89,7 @@ fetch/
 | 模块 | 文档 | 用途 |
 |------|------|------|
 | `fetch` | 本 README | HTTP 客户端库 |
-| `tlsfingerprint` | [tlsfingerprint/README.md](tlsfingerprint/README.md) | TLS 指纹 / uTLS |
+| `fingerprint` | [fingerprint/README.md](fingerprint/README.md) | TLS 指纹 / uTLS |
 | `httpproxy` | [httpproxy/README.md](httpproxy/README.md) | VLESS 代理协议 / 本地 HTTP 代理 |
 
 ## 特性

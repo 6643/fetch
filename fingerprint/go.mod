@@ -1,4 +1,4 @@
-module github.com/6643/fetch/tlsfingerprint
+module github.com/6643/fetch/fingerprint
 
 go 1.25.0
 

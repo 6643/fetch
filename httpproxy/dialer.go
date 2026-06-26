@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/6643/fetch/tlsfingerprint"
+	"github.com/6643/fetch/fingerprint"
 	utls "github.com/refraction-networking/utls"
 )
 
@@ -131,7 +131,7 @@ func websocketUTLSDialContext(tlsConfig *tls.Config) func(ctx context.Context, n
 			return nil, err
 		}
 
-		uConfig := tlsfingerprint.ToUTLSConfig(tlsConfig)
+		uConfig := fingerprint.ToUTLSConfig(tlsConfig)
 		uConfig.NextProtos = []string{"http/1.1"}
 
 		conn := utls.UClient(rawConn, uConfig, helloID)

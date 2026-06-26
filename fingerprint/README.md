@@ -1,11 +1,11 @@
-# tlsfingerprint — TLS 指纹库
+# fingerprint — TLS 指纹库
 
 使用 [uTLS](https://github.com/refraction-networking/utls) 实现浏览器 TLS 握手模仿，支持 JA3/JA4 指纹。
 
 ## 安装
 
 ```bash
-go get github.com/6643/fetch/tlsfingerprint
+go get github.com/6643/fetch/fingerprint
 ```
 
 注意：本模块作为 monorepo 的一部分，开发时通过 `go.work` 管理。
@@ -13,13 +13,13 @@ go get github.com/6643/fetch/tlsfingerprint
 ## 使用
 
 ```go
-import "github.com/6643/fetch/tlsfingerprint"
+import "github.com/6643/fetch/fingerprint"
 
 // 1. 获取指纹 ID
-helloID, err := tlsfingerprint.ResolveFingerprint("chrome")
+helloID, err := fingerprint.ResolveFingerprint("chrome")
 
 // 2. 创建 Fingerprint Transport
-transport, err := tlsfingerprint.NewTransport("chrome", tlsConfig, localAddr)
+transport, err := fingerprint.NewTransport("chrome", tlsConfig, localAddr)
 
 // 3. 用于 HTTP 请求
 client := &http.Client{Transport: transport}

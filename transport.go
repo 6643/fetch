@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/6643/fetch/fingerprint"
 	"github.com/6643/fetch/httpproxy"
-	"github.com/6643/fetch/tlsfingerprint"
 )
 
 var (
@@ -58,7 +58,7 @@ func transportFor(cfg *callConfig) (http.RoundTripper, func(), error) {
 	}
 
 	if cfg.fingerprint != "" {
-		tp, err := tlsfingerprint.NewTransport(cfg.fingerprint, cfg.tlsConfig, cfg.localAddr)
+		tp, err := fingerprint.NewTransport(cfg.fingerprint, cfg.tlsConfig, cfg.localAddr)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -261,7 +261,7 @@ func WithFingerprint(name string) Option {
 			cfg.fingerprint = ""
 			return nil
 		}
-		if _, err := tlsfingerprint.ResolveFingerprint(name); err != nil {
+		if _, err := fingerprint.ResolveFingerprint(name); err != nil {
 			return err
 		}
 		cfg.fingerprint = name

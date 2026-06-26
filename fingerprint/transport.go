@@ -1,4 +1,4 @@
-package tlsfingerprint
+package fingerprint
 
 import (
 	"context"

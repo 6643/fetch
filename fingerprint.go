@@ -1,23 +1,23 @@
 // Package fetch — HTTP client library with proxy and TLS fingerprint support.
 //
-// TLS fingerprint functionality has been extracted to the tlsfingerprint
-// submodule (github.com/6643/fetch/tlsfingerprint). These constants are
+// TLS fingerprint functionality has been extracted to the fingerprint
+// submodule (github.com/6643/fetch/fingerprint). These constants are
 // re-exported here for backward compatibility.
 package fetch
 
 import (
-	"github.com/6643/fetch/tlsfingerprint"
+	"github.com/6643/fetch/fingerprint"
 )
 
 const (
-	FingerprintChrome     = tlsfingerprint.FingerprintChrome
-	FingerprintFirefox    = tlsfingerprint.FingerprintFirefox
-	FingerprintSafari     = tlsfingerprint.FingerprintSafari
-	FingerprintEdge       = tlsfingerprint.FingerprintEdge
-	FingerprintIOS        = tlsfingerprint.FingerprintIOS
-	FingerprintAndroid    = tlsfingerprint.FingerprintAndroid
-	FingerprintRandom     = tlsfingerprint.FingerprintRandom
-	FingerprintRandomized = tlsfingerprint.FingerprintRandomized
-	FingerprintGolang     = tlsfingerprint.FingerprintGolang
-	FingerprintCustom     = tlsfingerprint.FingerprintCustom
+	FingerprintChrome     = fingerprint.FingerprintChrome
+	FingerprintFirefox    = fingerprint.FingerprintFirefox
+	FingerprintSafari     = fingerprint.FingerprintSafari
+	FingerprintEdge       = fingerprint.FingerprintEdge
+	FingerprintIOS        = fingerprint.FingerprintIOS
+	FingerprintAndroid    = fingerprint.FingerprintAndroid
+	FingerprintRandom     = fingerprint.FingerprintRandom
+	FingerprintRandomized = fingerprint.FingerprintRandomized
+	FingerprintGolang     = fingerprint.FingerprintGolang
+	FingerprintCustom     = fingerprint.FingerprintCustom
 )
