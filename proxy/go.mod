@@ -1,4 +1,4 @@
-module github.com/6643/fetch/httpproxy
+module github.com/6643/fetch/proxy
 
 go 1.26.4
 

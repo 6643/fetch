@@ -1,11 +1,11 @@
-# httpproxy — VLESS 代理协议库
+# proxy — VLESS 代理协议库
 
 实现 VLESS 代理协议，支持 WebSocket 传输、TLS/uTLS、ECH（Encrypted Client Hello）和本地 HTTP 代理。
 
 ## 安装
 
 ```bash
-go get github.com/6643/fetch/httpproxy
+go get github.com/6643/fetch/proxy
 ```
 
 ## 快速开始
@@ -13,9 +13,9 @@ go get github.com/6643/fetch/httpproxy
 ### 直接使用 DialContext（集成到 http.Transport）
 
 ```go
-import "github.com/6643/fetch/httpproxy"
+import "github.com/6643/fetch/proxy"
 
-dialFn, err := httpproxy.DialContext("vless://uuid@host:port?security=tls&type=ws")
+dialFn, err := proxy.DialContext("vless://uuid@host:port?security=tls&type=ws")
 if err != nil {
     panic(err)
 }
@@ -30,21 +30,21 @@ resp, err := client.Get("https://httpbin.org/get")
 ```go
 import (
     "github.com/6643/fetch"
-    "github.com/6643/fetch/httpproxy"
+    "github.com/6643/fetch/proxy"
 )
 
-proxy, err := httpproxy.NewProxy("vless://uuid@host:port?security=tls&type=ws")
+p, err := proxy.NewProxy("vless://uuid@host:port?security=tls&type=ws")
 if err != nil {
     panic(err)
 }
-defer proxy.Close()
+defer p.Close()
 
-proxy.Start(ctx, "")  // 随机端口
-fmt.Printf("HTTP proxy listening on %s\n", proxy.Addr())
+p.Start(ctx, "")  // 随机端口
+fmt.Printf("HTTP proxy listening on %s\n", p.Addr())
 
 // 通过标准 HTTP 代理使用，无需感知 VLESS
 resp, err := fetch.Get("https://example.com",
-    fetch.WithProxy("http://"+proxy.Addr().String()),
+    fetch.WithProxy("http://"+p.Addr().String()),
 )
 
 // 也支持 curl -x http://<addr>

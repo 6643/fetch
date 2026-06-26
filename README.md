@@ -79,7 +79,7 @@ func main() {
 ```
 fetch/
 ├── fingerprint/    # TLS 指纹 (uTLS) 库
-├── httpproxy/         # VLESS 代理协议 + 本地 HTTP 代理
+├── proxy/         # VLESS 代理协议 + 本地 HTTP 代理
 ├── go.work            # Go workspace
 └── README.md
 ```
@@ -90,7 +90,7 @@ fetch/
 |------|------|------|
 | `fetch` | 本 README | HTTP 客户端库 |
 | `fingerprint` | [fingerprint/README.md](fingerprint/README.md) | TLS 指纹 / uTLS |
-| `httpproxy` | [httpproxy/README.md](httpproxy/README.md) | VLESS 代理协议 / 本地 HTTP 代理 |
+| `proxy` | [proxy/README.md](proxy/README.md) | VLESS 代理协议 / 本地 HTTP 代理 |
 
 ## 特性
 
@@ -220,7 +220,7 @@ fetch.WithFingerprint("chrome")
 说明:
 
 - `fetch.WithProxy` 根据 URL scheme 自动识别代理类型: `http://`/`https://`/`socks5://`/`socks5h://` 为传统代理。
-- VLESS 代理推荐通过 `httpproxy` 子模块启动本地 HTTP 代理后，再通过 `WithProxy` 使用标准 HTTP 代理访问。见 [VLESS 示例](#vless-示例)。
+- VLESS 代理推荐通过 `proxy` 子模块启动本地 HTTP 代理后，再通过 `WithProxy` 使用标准 HTTP 代理访问。见 [VLESS 示例](#vless-示例)。
 - 传统代理可与 `WithFingerprint`、`WithTLSConfig`、`WithLocalAddr` 组合使用。
 - 使用 `Client` 时，这些选项必须在 `NewClient` 时传入，不可按请求覆盖。
 
@@ -294,18 +294,18 @@ res, err := client.Get("https://example.com")
 
 ### VLESS 示例
 
-**方式一：通过 httpproxy 本地 HTTP 代理（推荐）**
+**方式一：通过 proxy 本地 HTTP 代理（推荐）**
 
 启动本地 HTTP 代理服务器，对外暴露标准 HTTP 代理端口，fetch 无需感知 VLESS：
 
 ```go
 import (
     "github.com/6643/fetch"
-    "github.com/6643/fetch/httpproxy"
+    "github.com/6643/fetch/proxy"
 )
 
 // 1. 启动本地 HTTP 代理（自动绑定随机端口）
-proxy, err := httpproxy.NewProxy(
+p, err := proxy.NewProxy(
     "vless://uuid@server:443?security=tls&type=ws&path=%2Fws&fp=chrome",
 )
 if err != nil {
@@ -328,12 +328,12 @@ resp, err := fetch.Get(
 )
 ```
 
-**方式二：通过 httpproxy.DialContext 集成到 Transport**
+**方式二：通过 proxy.DialContext 集成到 Transport**
 
 ```go
-import "github.com/6643/fetch/httpproxy"
+import "github.com/6643/fetch/proxy"
 
-dialFn, err := httpproxy.DialContext(
+dialFn, err := proxy.DialContext(
     "vless://uuid@server:443?security=tls&type=ws&path=%2Fws&fp=chrome",
 )
 if err != nil {

@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/6643/fetch/fingerprint"
-	"github.com/6643/fetch/httpproxy"
+	"github.com/6643/fetch/proxy"
 )
 
 var (
@@ -44,7 +44,7 @@ func newDefaultTransport() *http.Transport {
 
 func transportFor(cfg *callConfig) (http.RoundTripper, func(), error) {
 	if cfg.proxyURI != "" {
-		dialFn, err := httpproxy.DialContext(cfg.proxyURI)
+		dialFn, err := proxy.DialContext(cfg.proxyURI)
 		if err != nil {
 			return nil, nil, err
 		}

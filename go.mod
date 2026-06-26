@@ -3,7 +3,7 @@ module github.com/6643/fetch
 go 1.26.4
 
 require (
-	github.com/6643/fetch/httpproxy v0.0.0-00010101000000-000000000000
+	github.com/6643/fetch/proxy v0.0.0-00010101000000-000000000000
 	github.com/6643/fetch/fingerprint v0.0.0
 )
 
@@ -19,6 +19,6 @@ require (
 )
 
 replace (
-	github.com/6643/fetch/httpproxy => ./httpproxy
+	github.com/6643/fetch/proxy => ./proxy
 	github.com/6643/fetch/fingerprint => ./fingerprint
 )
