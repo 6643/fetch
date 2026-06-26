@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"sync"
@@ -38,17 +39,16 @@ func (p *Proxy) Start(ctx context.Context, addr string) error {
 		return err
 	}
 	p.listener = listener
-
 	p.server = &http.Server{
 		Handler: p,
 	}
-
-	go p.server.Serve(listener) //nolint:errcheck
-
+	go func() {
+		_ = p.server.Serve(listener)
+	}()
 	return nil
 }
 
-// Addr returns the listener address, or nil if not started.
+// Addr returns the listener address of the proxy server.
 func (p *Proxy) Addr() net.Addr {
 	if p.listener != nil {
 		return p.listener.Addr()
@@ -56,7 +56,7 @@ func (p *Proxy) Addr() net.Addr {
 	return nil
 }
 
-// Close closes the proxy server.
+// Close stops the proxy server.
 func (p *Proxy) Close() error {
 	if p.server != nil {
 		return p.server.Close()
@@ -64,7 +64,6 @@ func (p *Proxy) Close() error {
 	return nil
 }
 
-// ServeHTTP implements http.Handler. It routes CONNECT and plain HTTP requests.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodConnect {
 		p.serveConnect(w, r)
@@ -73,8 +72,6 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.serveHTTP(w, r)
 }
 
-// serveConnect handles CONNECT requests by establishing a VLESS tunnel
-// and performing bidirectional copy between client and target.
 func (p *Proxy) serveConnect(w http.ResponseWriter, r *http.Request) {
 	dialCtx, cancel := context.WithCancel(r.Context())
 	defer cancel()
@@ -97,7 +94,6 @@ func (p *Proxy) serveConnect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "hijacking not supported", http.StatusInternalServerError)
 		return
 	}
-
 	clientConn, _, err := hijacker.Hijack()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
@@ -105,10 +101,8 @@ func (p *Proxy) serveConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	defer clientConn.Close()
 
-	// Write 200 Connection Established before starting copy.
-	if _, err := clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n")); err != nil {
-		return
-	}
+	//nolint:errcheck
+	clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -123,7 +117,6 @@ func (p *Proxy) serveConnect(w http.ResponseWriter, r *http.Request) {
 	wg.Wait()
 }
 
-// serveHTTP handles plain HTTP requests by forwarding them through the VLESS tunnel.
 func (p *Proxy) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	dialCtx, cancel := context.WithCancel(r.Context())
 	defer cancel()
@@ -141,7 +134,7 @@ func (p *Proxy) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	// Write the original request through the VLESS tunnel.
+	// Send the original request through the tunnel.
 	if err := r.Write(conn); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -156,9 +149,7 @@ func (p *Proxy) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	// Copy headers and body back to the client.
-	for k, v := range resp.Header {
-		w.Header()[k] = v
-	}
+	maps.Copy(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body) //nolint:errcheck
 }
