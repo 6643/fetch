@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/6643/fetch/httpproxy"
 	"github.com/6643/fetch/tlsfingerprint"
 )
 
@@ -43,18 +44,13 @@ func newDefaultTransport() *http.Transport {
 
 func transportFor(cfg *callConfig) (http.RoundTripper, func(), error) {
 	if cfg.proxyURI != "" {
-		rt, err := newVlessRoundTripper(cfg.proxyURI)
+		dialFn, err := httpproxy.DialContext(cfg.proxyURI)
 		if err != nil {
 			return nil, nil, err
 		}
-		return rt, func() {
-			type closer interface {
-				CloseIdleConnections()
-			}
-			if c, ok := rt.(closer); ok {
-				c.CloseIdleConnections()
-			}
-		}, nil
+		transport := defaultTransport.Clone()
+		transport.DialContext = dialFn
+		return transport, transport.CloseIdleConnections, nil
 	}
 
 	if !cfg.hasTransportOverrides() {
@@ -212,8 +208,6 @@ func WithProxy(rawURL string) Option {
 			return nil
 		}
 		switch {
-		case strings.HasPrefix(rawURL, "vless://"):
-			return setupVless(cfg, rawURL)
 		case strings.HasPrefix(rawURL, "http://"),
 			strings.HasPrefix(rawURL, "https://"),
 			strings.HasPrefix(rawURL, "socks5://"),

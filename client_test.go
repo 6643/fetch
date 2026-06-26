@@ -231,25 +231,6 @@ func TestClientRejectsTransportOptionsPerRequest(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for per-request fingerprint")
 	}
-
-	_, err = client.Get("http://example.com", WithProxy("vless://11111111-2222-3333-4444-555555555555@example.com:443?security=tls&type=ws"))
-	if err == nil {
-		t.Fatal("expected error for per-request vless proxy")
-	}
-}
-
-func TestClientVlessTransport(t *testing.T) {
-	client, err := NewClient(
-		WithProxy("vless://11111111-2222-3333-4444-555555555555@example.com:443?security=tls&type=ws"),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer client.Close()
-
-	if client.transport == nil {
-		t.Fatal("expected non-nil transport")
-	}
 }
 
 func TestClientCloseIsIdempotent(t *testing.T) {
