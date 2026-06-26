@@ -13,6 +13,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/6643/fetch/tlsfingerprint"
 )
 
 func TestWithFingerprintAcceptsValidNames(t *testing.T) {
@@ -71,12 +73,8 @@ func TestWithFingerprintCreatesTransport(t *testing.T) {
 	if cleanup != nil {
 		defer cleanup()
 	}
-	transport, ok := rt.(*http.Transport)
-	if !ok {
-		t.Fatal("expected *http.Transport from transportFor")
-	}
-	if transport.DialTLSContext == nil {
-		t.Fatal("expected DialTLSContext to be set when fingerprint is used")
+	if _, ok := rt.(*tlsfingerprint.Transport); !ok {
+		t.Fatalf("expected *tlsfingerprint.Transport from transportFor, got %T", rt)
 	}
 }
 
@@ -97,24 +95,39 @@ func TestFingerprintTransportCache(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	transportA, _, err := transportFor(cfgA)
+	transportA, cleanupA, err := transportFor(cfgA)
 	if err != nil {
 		t.Fatal(err)
 	}
-	transportB, _, err := transportFor(cfgB)
+	if cleanupA != nil {
+		defer cleanupA()
+	}
+	transportB, cleanupB, err := transportFor(cfgB)
 	if err != nil {
 		t.Fatal(err)
 	}
-	transportC, _, err := transportFor(cfgC)
+	if cleanupB != nil {
+		defer cleanupB()
+	}
+	transportC, cleanupC, err := transportFor(cfgC)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if cleanupC != nil {
+		defer cleanupC()
 	}
 
-	if transportA != transportB {
-		t.Fatal("expected same transport for same fingerprint")
+	fpA, ok := transportA.(*tlsfingerprint.Transport)
+	_, okB := transportB.(*tlsfingerprint.Transport)
+	_, okC := transportC.(*tlsfingerprint.Transport)
+	if !ok || !okB || !okC {
+		t.Fatal("expected *tlsfingerprint.Transport")
 	}
-	if transportA == transportC {
-		t.Fatal("expected different transport for different fingerprint")
+	if fpA.Fingerprint() != "chrome" {
+		t.Fatal("expected chrome fingerprint")
+	}
+	if fpA == transportB {
+		t.Fatal("expected new transport instance per call")
 	}
 }
 
@@ -133,7 +146,7 @@ func TestUTLSConfigPreservesSecurityCallbacksAndProtocolFields(t *testing.T) {
 	roots := x509.NewCertPool()
 	verifyPeer := func(_ [][]byte, _ [][]*x509.Certificate) error { return nil }
 
-	cfg := toUTLSConfig(&tls.Config{
+	cfg := tlsfingerprint.ToUTLSConfig(&tls.Config{
 		RootCAs:               roots,
 		ServerName:            "front.example",
 		NextProtos:            []string{"h2", "http/1.1"},

@@ -12,14 +12,13 @@ import (
 	"sync"
 	"time"
 
-	utls "github.com/refraction-networking/utls"
-	"golang.org/x/net/http2"
+	"github.com/6643/fetch/tlsfingerprint"
 )
 
 var (
-	defaultTransport = newDefaultTransport()
-	overrideTransportCache      sync.Map
-	overrideTransportCacheMu    sync.Mutex
+	defaultTransport           = newDefaultTransport()
+	overrideTransportCache     sync.Map
+	overrideTransportCacheMu   sync.Mutex
 	overrideTransportCacheCount int
 )
 
@@ -48,23 +47,26 @@ func transportFor(cfg *callConfig) (http.RoundTripper, func(), error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		if t, ok := rt.(*http.Transport); ok {
-			return rt, t.CloseIdleConnections, nil
-		}
-		return rt, nil, nil
+		return rt, func() {
+			type closer interface {
+				CloseIdleConnections()
+			}
+			if c, ok := rt.(closer); ok {
+				c.CloseIdleConnections()
+			}
+		}, nil
 	}
 
 	if !cfg.hasTransportOverrides() {
 		return defaultTransport, nil, nil
 	}
 
-	// TLS 指纹: 使用自定义 Transport
 	if cfg.fingerprint != "" {
-		rt, err := newFingerprintTransport(cfg)
+		tp, err := tlsfingerprint.NewTransport(cfg.fingerprint, cfg.tlsConfig, cfg.localAddr)
 		if err != nil {
 			return nil, nil, err
 		}
-		return rt, func() {}, nil
+		return tp, tp.CloseIdleConnections, nil
 	}
 
 	if cfg.tlsConfig != nil {
@@ -100,91 +102,7 @@ func resetOverrideTransportCache() {
 	overrideTransportCacheMu.Unlock()
 }
 
-// ─── TLS 指纹 + HTTP/2 自定义 Transport ───────────
-
-type fingerprintTransport struct {
-	h2Transport *http2.Transport
-	dialer      *net.Dialer
-	fingerprint string
-	tlsConfig   *tls.Config
-	localAddr   string
-}
-
-func newFingerprintTransport(cfg *callConfig) (*fingerprintTransport, error) {
-	dialer := &net.Dialer{
-		Timeout:   30 * time.Second,
-		KeepAlive: 30 * time.Second,
-	}
-	if cfg.localAddr != "" {
-		ip := net.ParseIP(cfg.localAddr)
-		if ip != nil {
-			dialer.LocalAddr = &net.TCPAddr{IP: ip}
-		}
-	}
-
-	t := &fingerprintTransport{
-		dialer:      dialer,
-		fingerprint: cfg.fingerprint,
-		tlsConfig:   cfg.tlsConfig,
-		localAddr:   cfg.localAddr,
-	}
-
-	// 创建 http2.Transport，使用自定义 DialTLS
-	h2Transport := &http2.Transport{
-		DialTLS: func(network, addr string, _ *tls.Config) (net.Conn, error) {
-			return t.dialWithFingerprint(network, addr)
-		},
-		AllowHTTP: true,
-		ReadIdleTimeout: 30 * time.Second,
-		PingTimeout:     10 * time.Second,
-	}
-	t.h2Transport = h2Transport
-
-	return t, nil
-}
-
-func (t *fingerprintTransport) dialWithFingerprint(network, addr string) (net.Conn, error) {
-	helloID, err := resolveFingerprint(t.fingerprint)
-	if err != nil {
-		return nil, err
-	}
-
-	tcpConn, err := t.dialer.DialContext(context.Background(), network, addr)
-	if err != nil {
-		return nil, err
-	}
-
-	host, _, _ := net.SplitHostPort(addr)
-	tlsCfg := t.tlsConfig
-	if tlsCfg == nil {
-		tlsCfg = &tls.Config{}
-	}
-	cloned := tlsCfg.Clone()
-	if cloned.ServerName == "" {
-		cloned.ServerName = host
-	}
-
-	uConfig := toUTLSConfig(cloned)
-	uConfig.NextProtos = []string{"h2", "http/1.1"}
-
-	tlsConn := utls.UClient(tcpConn, uConfig, helloID)
-	if err := tlsConn.HandshakeContext(context.Background()); err != nil {
-		tcpConn.Close()
-		return nil, err
-	}
-
-	return tlsConn, nil
-}
-
-func (t *fingerprintTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	return t.h2Transport.RoundTrip(req)
-}
-
-func (t *fingerprintTransport) CloseIdleConnections() {
-	t.h2Transport.CloseIdleConnections()
-}
-
-// ─── 缓存和辅助函数 ───────────────────────────────
+// ─── Cache and helper functions ───────────────────────
 
 func newTransportCacheKey(cfg *callConfig) transportCacheKey {
 	key := transportCacheKey{
@@ -349,7 +267,7 @@ func WithFingerprint(name string) Option {
 			cfg.fingerprint = ""
 			return nil
 		}
-		if _, err := resolveFingerprint(name); err != nil {
+		if _, err := tlsfingerprint.ResolveFingerprint(name); err != nil {
 			return err
 		}
 		cfg.fingerprint = name

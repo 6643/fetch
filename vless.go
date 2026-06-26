@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/6643/fetch/tlsfingerprint"
 	"github.com/coder/websocket"
 	utls "github.com/refraction-networking/utls"
 )
@@ -77,7 +78,7 @@ func (d *vlessDialer) DialContext(ctx context.Context, network string, address s
 		return nil, fmt.Errorf("dial VLESS websocket: %w", err)
 	}
 
-	connCtx, cancelConn := context.WithCancel(context.Background())
+	connCtx, cancelConn := context.WithCancel(ctx)
 	conn := websocket.NetConn(connCtx, wsConn, websocket.MessageBinary)
 
 	header, err := encodeVlessTCPRequestHeader(d.cfg.UUIDBytes, address)
@@ -195,11 +196,11 @@ func websocketUTLSDialContext(tlsConfig *tls.Config) func(ctx context.Context, n
 			return nil, err
 		}
 
-		uConfig := toUTLSConfig(tlsConfig)
+		uConfig := tlsfingerprint.ToUTLSConfig(tlsConfig)
 		uConfig.NextProtos = []string{"http/1.1"}
 
 		conn := utls.UClient(rawConn, uConfig, helloID)
-		if err := handshakeUTLSWebsocket(ctx, conn, len(tlsConfig.EncryptedClientHelloConfigList) > 0); err != nil {
+		if err := handshakeUTLSWebsocket(ctx, conn); err != nil {
 			rawConn.Close()
 			return nil, fmt.Errorf("uTLS websocket handshake: %w", err)
 		}
@@ -213,27 +214,27 @@ func websocketUTLSDialContext(tlsConfig *tls.Config) func(ctx context.Context, n
 	}
 }
 
-func handshakeUTLSWebsocket(ctx context.Context, conn *utls.UConn, hasECH bool) error {
+func handshakeUTLSWebsocket(ctx context.Context, conn *utls.UConn) error {
 	if err := conn.BuildHandshakeState(); err != nil {
 		return err
 	}
-	if !hasECH {
-		hasALPN := false
-		for _, extension := range conn.Extensions {
-			alpn, ok := extension.(*utls.ALPNExtension)
-			if !ok {
-				continue
-			}
-			hasALPN = true
-			alpn.AlpnProtocols = []string{"http/1.1"}
-			break
+	// WebSocket upgrade requires HTTP/1.1 framing; always pin ALPN to avoid
+	// h2 negotiation which breaks the HTTP/1.1 upgrade request.
+	hasALPN := false
+	for _, extension := range conn.Extensions {
+		alpn, ok := extension.(*utls.ALPNExtension)
+		if !ok {
+			continue
 		}
-		if !hasALPN {
-			conn.Extensions = append(conn.Extensions, &utls.ALPNExtension{AlpnProtocols: []string{"http/1.1"}})
-		}
-		if err := conn.BuildHandshakeState(); err != nil {
-			return err
-		}
+		hasALPN = true
+		alpn.AlpnProtocols = []string{"http/1.1"}
+		break
+	}
+	if !hasALPN {
+		conn.Extensions = append(conn.Extensions, &utls.ALPNExtension{AlpnProtocols: []string{"http/1.1"}})
+	}
+	if err := conn.BuildHandshakeState(); err != nil {
+		return err
 	}
 	return conn.HandshakeContext(ctx)
 }
