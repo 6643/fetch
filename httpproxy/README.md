@@ -25,10 +25,13 @@ client := &http.Client{Transport: transport}
 resp, err := client.Get("https://httpbin.org/get")
 ```
 
-### 启动本地 HTTP 代理服务器
+### 启动本地 HTTP 代理服务器（推荐）
 
 ```go
-import "github.com/6643/fetch/httpproxy"
+import (
+    "github.com/6643/fetch"
+    "github.com/6643/fetch/httpproxy"
+)
 
 proxy, err := httpproxy.NewProxy("vless://uuid@host:port?security=tls&type=ws")
 if err != nil {
@@ -39,7 +42,12 @@ defer proxy.Close()
 proxy.Start(ctx, "")  // 随机端口
 fmt.Printf("HTTP proxy listening on %s\n", proxy.Addr())
 
-// 现在可以通过 curl -x http://<addr> 使用了
+// 通过标准 HTTP 代理使用，无需感知 VLESS
+resp, err := fetch.Get("https://example.com",
+    fetch.WithProxy("http://"+proxy.Addr().String()),
+)
+
+// 也支持 curl -x http://<addr>
 ```
 
 ## URI 格式

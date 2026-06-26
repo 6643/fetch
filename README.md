@@ -219,9 +219,9 @@ fetch.WithFingerprint("chrome")
 
 说明:
 
-- `fetch.WithProxy` 根据 URL scheme 自动识别代理类型: `http://`/`https://`/`socks5://`/`socks5h://` 为传统代理，`vless://` 为 VLESS 隧道。
+- `fetch.WithProxy` 根据 URL scheme 自动识别代理类型: `http://`/`https://`/`socks5://`/`socks5h://` 为传统代理。
+- VLESS 代理推荐通过 `httpproxy` 子模块启动本地 HTTP 代理后，再通过 `WithProxy` 使用标准 HTTP 代理访问。见 [VLESS 示例](#vless-示例)。
 - 传统代理可与 `WithFingerprint`、`WithTLSConfig`、`WithLocalAddr` 组合使用。
-- VLESS 代理不可与其他传输层选项组合使用，VLESS 传输配置通过 URI 参数 (`sni`/`host`/`path`/`fp`/`ech`) 设置。
 - 使用 `Client` 时，这些选项必须在 `NewClient` 时传入，不可按请求覆盖。
 
 ## 示例
@@ -294,21 +294,72 @@ res, err := client.Get("https://example.com")
 
 ### VLESS 示例
 
-使用 `WithProxy` 通过 VLESS WebSocket 隧道发送请求:
+**方式一：通过 httpproxy 本地 HTTP 代理（推荐）**
+
+启动本地 HTTP 代理服务器，对外暴露标准 HTTP 代理端口，fetch 无需感知 VLESS：
+
+```go
+import (
+    "github.com/6643/fetch"
+    "github.com/6643/fetch/httpproxy"
+)
+
+// 1. 启动本地 HTTP 代理（自动绑定随机端口）
+proxy, err := httpproxy.NewProxy(
+    "vless://uuid@server:443?security=tls&type=ws&path=%2Fws&fp=chrome",
+)
+if err != nil {
+    panic(err)
+}
+ctx, cancel := context.WithCancel(context.Background())
+defer cancel()
+if err := proxy.Start(ctx, ""); err != nil {
+    panic(err)
+}
+defer proxy.Close()
+
+// proxy.Addr() 返回实际监听地址，如 127.0.0.1:54321
+proxyAddr := proxy.Addr().String()
+
+// 2. fetch 通过标准 HTTP 代理发送请求，完全不知道后端是 VLESS
+resp, err := fetch.Get(
+    "https://example.com",
+    fetch.WithProxy("http://"+proxyAddr),
+)
+```
+
+**方式二：通过 httpproxy.DialContext 集成到 Transport**
+
+```go
+import "github.com/6643/fetch/httpproxy"
+
+dialFn, err := httpproxy.DialContext(
+    "vless://uuid@server:443?security=tls&type=ws&path=%2Fws&fp=chrome",
+)
+if err != nil {
+    panic(err)
+}
+
+transport := &http.Transport{DialContext: dialFn}
+client := &http.Client{Transport: transport}
+resp, err := client.Get("https://example.com")
+```
+
+**方式三：通过 fetch.WithProxy 直接使用（仅供一次性请求）**
 
 ```go
 // 一次性请求
-res, err := fetch.Get(
+resp, err := fetch.Get(
     "https://example.com",
     fetch.WithProxy("vless://uuid@server:443?security=tls&type=ws&path=%2Fws&fp=chrome"),
 )
 
-// 或通过 Client 复用（推荐）
+// 或通过 Client 复用
 client, _ := fetch.NewClient(
     fetch.WithProxy("vless://uuid@server:443?security=tls&type=ws&path=%2Fws&fp=chrome"),
 )
 defer client.Close()
-res, err := client.Get("https://example.com")
+resp, err := client.Get("https://example.com")
 ```
 
 说明:
