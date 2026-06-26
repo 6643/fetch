@@ -23,11 +23,11 @@ type cfg struct {
 }
 
 type res struct {
-	cfg  cfg
-	ok   bool
-	err  string
-	ip   string
-	tm   time.Duration
+	cfg cfg
+	ok  bool
+	err string
+	ip  string
+	tm  time.Duration
 }
 
 func main() {

@@ -17,9 +17,9 @@ import (
 )
 
 var (
-	defaultTransport           = newDefaultTransport()
-	overrideTransportCache     sync.Map
-	overrideTransportCacheMu   sync.Mutex
+	defaultTransport            = newDefaultTransport()
+	overrideTransportCache      sync.Map
+	overrideTransportCacheMu    sync.Mutex
 	overrideTransportCacheCount int
 )
 

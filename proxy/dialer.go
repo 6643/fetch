@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/coder/websocket"
 	"github.com/6643/fetch/fingerprint"
+	"github.com/coder/websocket"
 	utls "github.com/refraction-networking/utls"
 )
 

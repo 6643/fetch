@@ -53,7 +53,7 @@ func TestClientSharesTransportAcrossRequests(t *testing.T) {
 		origHandler.ServeHTTP(w, r)
 	})
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		res, err := client.Get(srv.URL)
 		if err != nil {
 			t.Fatal(err)
@@ -83,7 +83,7 @@ func TestClientReusesTransport(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		res, err := client.Get(srv.URL)
 		if err != nil {
 			t.Fatal(err)
