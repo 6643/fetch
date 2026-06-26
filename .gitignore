@@ -1,1 +1,4 @@
 .worktrees/
+.playwright-cli/
+.superpowers/
+*.sum

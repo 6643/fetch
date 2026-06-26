@@ -1,0 +1,15 @@
+// Package httpproxy provides VLESS proxy support with a local HTTP proxy server.
+//
+// Use DialContext to obtain a dial function for integration with http.Transport:
+//
+//	dialFn, err := httpproxy.DialContext("vless://uuid@host:port?security=tls&type=ws")
+//	transport := &http.Transport{DialContext: dialFn}
+//	client := &http.Client{Transport: transport}
+//
+// Use NewProxy/Start to run a local HTTP proxy server that routes through VLESS:
+//
+//	proxy, err := httpproxy.NewProxy("vless://uuid@host:port?...")
+//	proxy.Start(ctx, "")
+//	// Then configure curl -x http://127.0.0.1:<port>
+//	defer proxy.Close()
+package httpproxy
