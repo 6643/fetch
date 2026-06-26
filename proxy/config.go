@@ -78,6 +78,7 @@ func ParseVlessURI(raw string) (Config, error) {
 		return Config{}, configMessage("unsupported VLESS encryption")
 	}
 
+
 	tlsServerName := q.Get("sni")
 	if tlsServerName == "" {
 		tlsServerName = host

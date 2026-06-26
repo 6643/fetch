@@ -602,7 +602,7 @@ func TestResponseBodyLimitDrainsBodyForConnectionReuse(t *testing.T) {
 	srv.Start()
 	defer srv.Close()
 
-	for i := range 2 {
+	for range 2 {
 		_, err := Get(srv.URL, WithResponseBodyLimit(8))
 		if err == nil {
 			t.Fatal("expected response body limit error")
