@@ -144,7 +144,7 @@ func configMessage(message string) error {
 }
 
 func rawQueryValue(rawQuery string, targetKey string) (string, bool, error) {
-	for _, pair := range strings.Split(rawQuery, "&") {
+	for pair := range strings.SplitSeq(rawQuery, "&") {
 		if pair == "" {
 			continue
 		}

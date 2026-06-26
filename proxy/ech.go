@@ -115,7 +115,7 @@ func appendDNSName(msg []byte, name string) ([]byte, error) {
 	if trimmed == "" {
 		return append(msg, 0), nil
 	}
-	for _, label := range strings.Split(trimmed, ".") {
+	for label := range strings.SplitSeq(trimmed, ".") {
 		if len(label) == 0 || len(label) > 63 {
 			return nil, fmt.Errorf("invalid DNS name")
 		}
